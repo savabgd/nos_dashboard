@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NOC Dashboard - CETIN</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header class="top-bar">
+        <div class="top-bar-brand">
+            <span class="brand-icon">C</span>
+            <span class="brand-text">CETIN</span>
+        </div>
+        <h1 class="top-bar-title">NOC Dashboard</h1>
+    </header>
+
+    <main class="main-wrapper">
+        <div class="toolbar">
+            <select id="timeRange" class="time-select">
+                <option value="1">Last 1 Hour</option>
+                <option value="24" selected>Last 24 Hours</option>
+                <option value="168">Last 7 Days</option>
+            </select>
+            <button id="refreshBtn" class="btn-refresh" type="button">Refresh</button>
+        </div>
+
+        <section class="kpi-grid" aria-label="KPI summary">
+            <article class="kpi-card">
+                <div class="kpi-icon">CELL</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Total Cells</div>
+                    <div class="kpi-value" id="totalCells">-</div>
+                </div>
+            </article>
+            <article class="kpi-card">
+                <div class="kpi-icon">DROP</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Drop Rate</div>
+                    <div class="kpi-value" id="avgDropRate">-</div>
+                    <div class="kpi-delta" id="deltaDropRate"></div>
+                </div>
+            </article>
+            <article class="kpi-card">
+                <div class="kpi-icon">FAIL</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Access Fail</div>
+                    <div class="kpi-value" id="avgAccessFailRate">-</div>
+                    <div class="kpi-delta" id="deltaAccessFailRate"></div>
+                </div>
+            </article>
+            <article class="kpi-card">
+                <div class="kpi-icon">INT</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Cell Integrity</div>
+                    <div class="kpi-value" id="avgCellIntegrity">-</div>
+                    <div class="kpi-delta" id="deltaCellIntegrity"></div>
+                </div>
+            </article>
+            <article class="kpi-card">
+                <div class="kpi-icon">ERL</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Erlang</div>
+                    <div class="kpi-value" id="totalErlang">-</div>
+                    <div class="kpi-delta" id="deltaErlang"></div>
+                </div>
+            </article>
+        </section>
+
+        <section class="charts-row" aria-label="KPI charts">
+            <div class="chart-panel">
+                <h3>Access Fail Rate Trend</h3>
+                <canvas id="accessFailChart"></canvas>
+            </div>
+            <div class="chart-panel">
+                <h3>Drop Rate by Cell</h3>
+                <canvas id="dropRateChart"></canvas>
+            </div>
+            <div class="chart-panel">
+                <h3>Cell Integrity</h3>
+                <canvas id="integrityChart"></canvas>
+            </div>
+            <div class="chart-panel">
+                <h3>Erlang Load</h3>
+                <canvas id="erlangChart"></canvas>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <div class="table-header">
+                <h3>KPI Details by Cell</h3>
+                <button id="exportCsvBtn" class="btn-export" type="button">Export CSV</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="kpiTable">
+                    <thead>
+                        <tr>
+                            <th>Cluster</th>
+                            <th>Station</th>
+                            <th>Cell</th>
+                            <th>Band</th>
+                            <th>Access Fail<br>Rate (%)</th>
+                            <th>Drop<br>Rate (%)</th>
+                            <th>Cell<br>Integrity (%)</th>
+                            <th>Erlang</th>
+                            <th>Succ<br>Calls</th>
+                            <th>Mobility<br>SR (%)</th>
+                            <th>PDCCH<br>Error (%)</th>
+                            <th>Drops<br>Count</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

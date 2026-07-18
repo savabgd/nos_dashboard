@@ -1,0 +1,77 @@
+# ============================================================================
+# VoLTE KPI Dashboard - .gitignore
+# ============================================================================
+
+# Dependencies
+node_modules/
+package-lock.json
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Cache
+.cache/
+.redis/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Test
+coverage/
+.nyc_output/
+.pytest_cache/
+
+# ClickHouse
+clickhouse_data/
+clickhouse_log/
+clickhouse_config/
+
+# Docker
+.docker/
+
+# Frontend build
+.vite/
+
+# Backend
+server/__pycache__/
+*.sqlite

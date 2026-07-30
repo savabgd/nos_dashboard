@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NOC Dashboard - CETIN</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <header class="top-bar">
@@ -68,6 +71,30 @@
             </article>
         </section>
 
+        <section class="map-section" aria-label="Mrežna mapa">
+            <div class="map-header">
+                <div>
+                    <h3>Mrežna mapa Srbije</h3>
+                    <p class="map-subtitle">Regioni, bazne stanice i backbone linkovi</p>
+                </div>
+                <div id="mapStats" class="map-stats"></div>
+            </div>
+            <div class="network-map-wrapper">
+                <div id="networkMap" class="network-map-container"></div>
+                <div id="mapTooltip" class="map-tooltip hidden"></div>
+                <aside class="map-legend">
+                    <h4>Legenda</h4>
+                    <div class="legend-item"><span class="legend-dot good"></span> Stanica OK</div>
+                    <div class="legend-item"><span class="legend-dot warning"></span> Upozorenje</div>
+                    <div class="legend-item"><span class="legend-dot bad"></span> Kritično</div>
+                    <div class="legend-item"><span class="legend-line backhaul"></span> Backhaul</div>
+                    <div class="legend-item"><span class="legend-line fiber"></span> Fiber</div>
+                    <div class="legend-item"><span class="legend-line mw"></span> Microwave</div>
+                    <p class="legend-hint">Klikni region ili stanicu za filtriranje</p>
+                </aside>
+            </div>
+        </section>
+
         <section class="charts-row" aria-label="KPI charts">
             <div class="chart-panel">
                 <h3>Access Fail Rate Trend</h3>
@@ -117,6 +144,6 @@
         </section>
     </main>
 
-    <script src="app.js"></script>
+    <script type="module" src="/app.ts"></script>
 </body>
 </html>

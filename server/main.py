@@ -19,10 +19,11 @@ import uvicorn
 
 from .config import settings
 from .models import (
-    KpiResponse, 
-    KpiQueryRequest, 
-    AggregatedKpiResponse, 
-    HealthResponse, 
+    KpiResponse,
+    KpiMetrics,
+    KpiQueryRequest,
+    AggregatedKpiResponse,
+    HealthResponse,
     ErrorResponse,
     AlertResponse,
     ExportRequest
@@ -118,7 +119,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 # Security
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 async def verify_token(

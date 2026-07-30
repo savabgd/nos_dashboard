@@ -11,7 +11,7 @@
     "commit:auto:push": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1 -Push",
     "commit:auto:watch": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1 -Watch",
     "commit:auto:watch:push": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1 -Watch -Push",
-    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint app.ts --ext ts --report-unused-disable-directives --max-warnings 0",
     "type-check": "tsc --noEmit",
     "test": "vitest",
     "test:ui": "vitest --ui",
@@ -36,9 +36,11 @@
   "homepage": "https://github.com/your-org/volte-kpi-dashboard#readme",
   "dependencies": {
     "chart.js": "^4.4.1",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "leaflet": "^1.9.4"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20.10.5",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",

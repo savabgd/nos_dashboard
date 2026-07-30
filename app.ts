@@ -6,6 +6,9 @@
  * @version 1.0.0
  */
 
+import Chart from 'chart.js/auto';
+import { initNetworkMap, updateNetworkMap, NETWORK_STATIONS } from './network-map';
+
 // ============================================================================
 // Types and Interfaces
 // ============================================================================
@@ -54,7 +57,7 @@ interface ApiResponse {
   timestamp: string;
 }
 
-interface ApiError {
+export interface ApiError {
   success: boolean;
   error: string;
   code: number;
@@ -67,9 +70,10 @@ interface ApiError {
 // ============================================================================
 
 // Load configuration from environment variables
+const metaEnv = (import.meta as any).env || {};
 const CONFIG = {
-  API_BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080',
-  AUTO_REFRESH_INTERVAL: parseInt(import.meta.env.VITE_AUTO_REFRESH_INTERVAL || '300000'),
+  API_BASE_URL: metaEnv.VITE_API_BASE_URL || 'http://localhost:8080',
+  AUTO_REFRESH_INTERVAL: parseInt(metaEnv.VITE_AUTO_REFRESH_INTERVAL || '300000'),
 };
 
 // SLA Thresholds - configurable via environment or hardcoded defaults
@@ -264,6 +268,7 @@ function updateTable(): void {
   
   kpiData.forEach(cell => {
     const row = document.createElement('tr');
+    row.dataset.station = cell.stanica;
     const status = getCellStatus(cell);
     const statusClass = status === 'GOOD' ? 'status-good' : status === 'WARNING' ? 'status-warning' : 'status-bad';
     const erlangWarn = cell.volteErlang > SLA.erlangPerSector;
@@ -306,7 +311,7 @@ const chartTooltip = {
   cornerRadius: 4,
 };
 
-function chartOptions({ max = null as number | null, tooltip = chartTooltip } = {}): ChartOptions {
+function chartOptions({ max = null as number | null, tooltip = chartTooltip as any } = {}): ChartOptions {
   return {
     responsive: true,
     maintainAspectRatio: true,
@@ -444,11 +449,11 @@ function updateErlangChart(): void {
       }]
     },
     options: chartOptions({
-      tooltip: { 
-        ...chartTooltip, 
-        callbacks: { 
-          label: ctx => `${ctx.parsed.y.toFixed(1)} Erl` 
-        } 
+      tooltip: {
+        ...chartTooltip,
+        callbacks: {
+          label: (ctx: any) => `${ctx.parsed.y.toFixed(1)} Erl`
+        }
       }
     })
   });
@@ -470,22 +475,20 @@ function updateCharts(): void {
  */
 function generateMockData(hours: number = 24): KpiCell[] {
   const data: KpiCell[] = [];
-  const clusters = ['CENTAR_BGD', 'SEVER_BGD', 'NOVI_SAD', 'ZEMUN'];
-  const stations = ['BGD_CEN_001', 'BGD_CEN_002', 'BGD_SEV_001', 'NS_001', 'ZEM_001'];
   const bands = ['800', '1800', '2100'];
-  const rows = hours <= 1 ? 10 : hours <= 24 ? 20 : 35;
-  
+  const badStations = new Set(['BGD_CEN_002', 'BGD_SEV_002', 'NS_003', 'NIS_001']);
+  const rows = hours <= 1 ? 12 : hours <= 24 ? 24 : 40;
+
   for (let i = 0; i < rows; i++) {
-    const cluster = pick(clusters);
-    const station = pick(stations);
+    const station = NETWORK_STATIONS[i % NETWORK_STATIONS.length];
     const band = pick(bands);
-    const cell = `${station}_${band}_${Math.floor(Math.random() * 3) + 1}`;
-    const isBad = Math.random() < 0.2;
-    
+    const cell = `${station.id}_${band}_${Math.floor(Math.random() * 3) + 1}`;
+    const isBad = badStations.has(station.id) || Math.random() < 0.12;
+
     data.push({
       celija: cell,
-      stanica: station,
-      klaster: cluster,
+      stanica: station.id,
+      klaster: station.cluster,
       band,
       volteAccessFailureRate: isBad ? Math.random() * 5 + 2 : Math.random() * 1.5,
       volteDropRate: isBad ? Math.random() * 4 + 2 : Math.random() * 1,
@@ -494,10 +497,10 @@ function generateMockData(hours: number = 24): KpiCell[] {
       volteSuccCalls: Math.floor(Math.random() * 1000 + 200),
       volteMobilitySR: isBad ? Math.random() * 5 + 90 : Math.random() * 3 + 96,
       pdcchErrorRateVolte: isBad ? Math.random() * 6 + 3 : Math.random() * 2,
-      volteDropsCount: isBad ? Math.floor(Math.random() * 50 + 20) : Math.floor(Math.random() * 10)
+      volteDropsCount: isBad ? Math.floor(Math.random() * 50 + 20) : Math.floor(Math.random() * 10),
     });
   }
-  
+
   return data;
 }
 
@@ -565,6 +568,7 @@ function updateDashboard(): void {
   updateSummaryCards(curr);
   updateTable();
   updateCharts();
+  updateNetworkMap(kpiData);
 }
 
 /**
@@ -700,6 +704,7 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log(`Auto-refresh interval: ${CONFIG.AUTO_REFRESH_INTERVAL}ms`);
   
   setupEventListeners();
+  initNetworkMap('networkMap');
   loadData();
   startAutoRefresh();
 });

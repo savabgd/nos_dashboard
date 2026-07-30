@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+COPY server/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
@@ -31,7 +31,7 @@ FROM base as production
 
 # Copy application code
 COPY server/ ./server/
-COPY .env .
+COPY .env.example .env
 
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash appuser && \

@@ -26,6 +26,7 @@
       "@/*": ["*"]
     }
   },
-  "include": ["index.html", "app.ts", "**/*.ts", "**/*.tsx"],
+  "include": ["index.html", "app.ts", "network-map.ts", "**/*.test.ts", "**/*.spec.ts"],
+  "exclude": ["node_modules", "dist", "vite.config.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

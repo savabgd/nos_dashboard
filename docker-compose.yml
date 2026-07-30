@@ -72,8 +72,6 @@ services:
       - SLA_PDCCH_ERROR=3.0
       - SLA_ERLANG_PER_SECTOR=40.0
       - AUTH_ENABLED=false
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -156,6 +154,23 @@ services:
       - volte-kpi-network
 
   # -----------------------------------------------------------------------------
+  # ClickHouse Schema Init (One-time setup)
+  # -----------------------------------------------------------------------------
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: volte-kpi-clickhouse-init
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ./01_schema.sql:/schema.sql:ro
+    entrypoint: ["/bin/bash", "-c", "clickhouse-client --host clickhouse --multiquery < /schema.sql && echo 'Schema applied successfully'"]
+    profiles:
+      - setup
+    networks:
+      - volte-kpi-network
+
+  # -----------------------------------------------------------------------------
   # Data Generator (One-time setup)
   # -----------------------------------------------------------------------------
   data-generator:
@@ -166,6 +181,8 @@ services:
     container_name: volte-kpi-data-generator
     command: python 02_sample_data.py --host clickhouse --port 8123 --days 7
     depends_on:
+      clickhouse-init:
+        condition: service_completed_successfully
       clickhouse:
         condition: service_healthy
     volumes:

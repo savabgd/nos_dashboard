@@ -31,421 +31,50 @@ export interface KpiCellLike {
   volteCellIntegrity: number;
 }
 
-export interface District {
-  id: string;
+export interface DistrictMeta {
   name: string;
   macroRegion: string;
   centerCity: string;
-  centerLat: number;
-  centerLon: number;
   fill: string;
-  polygon: [number, number][];
 }
 
 /**
- * Official 30 districts (Okruzi) of Republic of Serbia with multi-vertex organic boundaries
+ * Metadata for the official districts (okruzi) of the Republic of Serbia.
+ * Real boundary geometry is loaded at runtime from /serbia-districts.geojson
+ * (sourced from geoBoundaries, gbOpen ADM1) — keyed by these region ids.
  */
-export const DISTRICTS: District[] = [
-  // --- VOJVODINA ---
-  {
-    id: 'severnobacki',
-    name: 'Severnobački okrug',
-    macroRegion: 'Vojvodina',
-    centerCity: 'Subotica',
-    centerLat: 46.05,
-    centerLon: 19.65,
-    fill: '#38bdf8',
-    polygon: [
-      [46.18, 19.35], [46.18, 19.65], [46.18, 19.92], [46.05, 19.92],
-      [45.85, 19.85], [45.75, 19.65], [45.75, 19.55], [45.82, 19.35], [46.00, 19.35]
-    ]
-  },
-  {
-    id: 'zapadnobacki',
-    name: 'Zapadnobački okrug',
-    macroRegion: 'Vojvodina',
-    centerCity: 'Sombor',
-    centerLat: 45.77,
-    centerLon: 19.12,
-    fill: '#0284c7',
-    polygon: [
-      [46.00, 18.82], [46.18, 19.12], [46.18, 19.35], [45.82, 19.35],
-      [45.65, 19.45], [45.45, 19.45], [45.45, 19.15], [45.62, 18.95], [45.85, 18.85]
-    ]
-  },
-  {
-    id: 'juznobacki',
-    name: 'Južnobački okrug',
-    macroRegion: 'Vojvodina',
-    centerCity: 'Novi Sad',
-    centerLat: 45.30,
-    centerLon: 19.80,
-    fill: '#0ea5e9',
-    polygon: [
-      [45.82, 19.35], [45.85, 19.85], [45.68, 20.15], [45.45, 20.25],
-      [45.22, 20.25], [45.15, 19.80], [45.15, 19.35], [45.45, 19.45], [45.65, 19.45]
-    ]
-  },
-  {
-    id: 'severnobanatski',
-    name: 'Severnobanatski okrug',
-    macroRegion: 'Vojvodina',
-    centerCity: 'Kikinda',
-    centerLat: 45.92,
-    centerLon: 20.25,
-    fill: '#0369a1',
-    polygon: [
-      [46.18, 19.92], [46.18, 20.25], [46.15, 20.35], [46.02, 20.55],
-      [45.75, 20.65], [45.68, 20.35], [45.68, 20.15], [45.85, 19.85]
-    ]
-  },
-  {
-    id: 'srednjobanatski',
-    name: 'Srednjobanatski okrug',
-    macroRegion: 'Vojvodina',
-    centerCity: 'Zrenjanin',
-    centerLat: 45.42,
-    centerLon: 20.50,
-    fill: '#0284c7',
-    polygon: [
-      [45.68, 20.15], [45.75, 20.65], [45.62, 20.80], [45.42, 20.85],
-      [45.22, 20.82], [45.15, 20.75], [45.22, 20.25], [45.45, 20.25]
-    ]
-  },
-  {
-    id: 'juznobanatski',
-    name: 'Južnobanatski okrug',
-    macroRegion: 'Vojvodina',
-    centerCity: 'Pančevo',
-    centerLat: 45.05,
-    centerLon: 21.05,
-    fill: '#075985',
-    polygon: [
-      [45.15, 20.75], [45.22, 20.82], [45.42, 20.85], [45.32, 21.32],
-      [45.18, 21.48], [44.85, 21.55], [44.75, 21.50], [44.78, 20.95], [44.78, 20.65]
-    ]
-  },
-  {
-    id: 'sremski',
-    name: 'Sremski okrug',
-    macroRegion: 'Vojvodina',
-    centerCity: 'Sremska Mitrovica',
-    centerLat: 44.98,
-    centerLon: 19.70,
-    fill: '#0ea5e9',
-    polygon: [
-      [45.15, 19.05], [45.15, 19.35], [45.15, 19.80], [45.22, 20.25],
-      [44.95, 20.25], [44.82, 20.25], [44.82, 19.65], [44.82, 19.05], [44.98, 19.05]
-    ]
-  },
-
-  // --- GRAD BEOGRAD ---
-  {
-    id: 'beograd',
-    name: 'Grad Beograd',
-    macroRegion: 'Beograd',
-    centerCity: 'Beograd',
-    centerLat: 44.78,
-    centerLon: 20.46,
-    fill: '#6366f1',
-    polygon: [
-      [44.95, 20.18], [44.92, 20.45], [44.92, 20.72], [44.75, 20.75],
-      [44.42, 20.75], [44.38, 20.45], [44.38, 20.28], [44.62, 20.18], [44.82, 20.18]
-    ]
-  },
-
-  // --- ŠUMADIJA I ZAPADNA SRBIJA ---
-  {
-    id: 'macvanski',
-    name: 'Mačvanski okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Šabac',
-    centerLat: 44.55,
-    centerLon: 19.55,
-    fill: '#10b981',
-    polygon: [
-      [44.82, 19.05], [44.82, 19.65], [44.82, 20.08], [44.62, 19.98],
-      [44.42, 19.92], [44.25, 19.55], [44.15, 19.25], [44.28, 19.12], [44.38, 19.05], [44.62, 19.05]
-    ]
-  },
-  {
-    id: 'kolubarski',
-    name: 'Kolubarski okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Valjevo',
-    centerLat: 44.27,
-    centerLon: 20.00,
-    fill: '#059669',
-    polygon: [
-      [44.42, 19.92], [44.62, 19.98], [44.42, 20.28], [44.25, 20.32],
-      [44.05, 20.35], [44.05, 20.00], [44.05, 19.72], [44.25, 19.55]
-    ]
-  },
-  {
-    id: 'podunavski',
-    name: 'Podunavski okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Smederevo',
-    centerLat: 44.52,
-    centerLon: 20.95,
-    fill: '#047857',
-    polygon: [
-      [44.65, 20.75], [44.72, 20.95], [44.72, 21.15], [44.52, 21.18],
-      [44.32, 21.18], [44.32, 20.95], [44.32, 20.75], [44.42, 20.75]
-    ]
-  },
-  {
-    id: 'branicevski',
-    name: 'Braničevski okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Požarevac',
-    centerLat: 44.50,
-    centerLon: 21.55,
-    fill: '#10b981',
-    polygon: [
-      [44.75, 21.15], [44.75, 21.55], [44.75, 21.95], [44.50, 21.95],
-      [44.25, 21.95], [44.22, 21.55], [44.22, 21.18], [44.52, 21.18]
-    ]
-  },
-  {
-    id: 'sumadijski',
-    name: 'Šumadijski okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Kragujevac',
-    centerLat: 44.15,
-    centerLon: 20.75,
-    fill: '#34d399',
-    polygon: [
-      [44.38, 20.28], [44.42, 20.75], [44.32, 20.75], [44.15, 21.05],
-      [43.92, 21.05], [43.92, 20.75], [43.92, 20.45], [44.05, 20.35], [44.25, 20.32]
-    ]
-  },
-  {
-    id: 'pomoravski',
-    name: 'Pomoravski okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Jagodina',
-    centerLat: 44.00,
-    centerLon: 21.35,
-    fill: '#059669',
-    polygon: [
-      [44.32, 21.18], [44.22, 21.55], [44.22, 21.65], [43.95, 21.60],
-      [43.72, 21.55], [43.72, 21.25], [43.72, 21.05], [43.92, 21.05], [44.15, 21.05]
-    ]
-  },
-  {
-    id: 'zlatiborski',
-    name: 'Zlatiborski okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Užice',
-    centerLat: 43.65,
-    centerLon: 19.65,
-    fill: '#065f46',
-    polygon: [
-      [44.15, 19.25], [44.25, 19.55], [44.05, 19.72], [43.92, 20.15],
-      [43.65, 20.15], [43.38, 20.15], [43.22, 20.15], [43.22, 19.65], [43.25, 19.18], [43.65, 19.15], [43.92, 19.15]
-    ]
-  },
-  {
-    id: 'moravicki',
-    name: 'Moravički okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Čačak',
-    centerLat: 43.75,
-    centerLon: 20.25,
-    fill: '#047857',
-    polygon: [
-      [44.05, 19.72], [44.05, 20.00], [44.05, 20.35], [43.92, 20.45],
-      [43.75, 20.45], [43.45, 20.45], [43.45, 20.08], [43.65, 20.15], [43.92, 20.15]
-    ]
-  },
-  {
-    id: 'raski',
-    name: 'Raški okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Kraljevo',
-    centerLat: 43.40,
-    centerLon: 20.55,
-    fill: '#064e3b',
-    polygon: [
-      [43.92, 20.45], [43.92, 20.75], [43.92, 21.05], [43.72, 21.05],
-      [43.55, 21.05], [43.25, 20.85], [42.92, 20.75], [42.92, 20.45], [42.92, 20.08], [43.22, 20.15], [43.38, 20.15], [43.45, 20.45]
-    ]
-  },
-  {
-    id: 'rasinski',
-    name: 'Rasinski okrug',
-    macroRegion: 'Šumadija i zapadna Srbija',
-    centerCity: 'Kruševac',
-    centerLat: 43.50,
-    centerLon: 21.20,
-    fill: '#10b981',
-    polygon: [
-      [43.72, 21.05], [43.72, 21.25], [43.72, 21.55], [43.50, 21.55],
-      [43.28, 21.55], [43.25, 21.20], [43.25, 20.85], [43.55, 21.05]
-    ]
-  },
-
-  // --- JUŽNA I ISTOČNA SRBIJA ---
-  {
-    id: 'borski',
-    name: 'Borski okrug',
-    macroRegion: 'Južna i istočna Srbija',
-    centerCity: 'Bor',
-    centerLat: 44.40,
-    centerLon: 22.30,
-    fill: '#f59e0b',
-    polygon: [
-      [44.75, 21.95], [44.80, 22.30], [44.80, 22.65], [44.40, 22.65],
-      [44.05, 22.65], [44.05, 22.30], [44.05, 21.95], [44.25, 21.95], [44.50, 21.95]
-    ]
-  },
-  {
-    id: 'zajecarski',
-    name: 'Zaječarski okrug',
-    macroRegion: 'Južna i istočna Srbija',
-    centerCity: 'Zaječar',
-    centerLat: 43.75,
-    centerLon: 22.20,
-    fill: '#d97706',
-    polygon: [
-      [44.05, 21.95], [44.05, 22.30], [44.05, 22.65], [43.75, 22.65],
-      [43.45, 22.52], [43.45, 22.20], [43.45, 21.75], [43.72, 21.55], [43.95, 21.60], [44.22, 21.65]
-    ]
-  },
-  {
-    id: 'toplicki',
-    name: 'Toplički okrug',
-    macroRegion: 'Južna i istočna Srbija',
-    centerCity: 'Prokuplje',
-    centerLat: 43.20,
-    centerLon: 21.25,
-    fill: '#b45309',
-    polygon: [
-      [43.35, 20.95], [43.35, 21.25], [43.35, 21.55], [43.20, 21.55],
-      [43.02, 21.55], [43.02, 21.25], [43.02, 20.95], [43.25, 20.85]
-    ]
-  },
-  {
-    id: 'nisavski',
-    name: 'Nišavski okrug',
-    macroRegion: 'Južna i istočna Srbija',
-    centerCity: 'Niš',
-    centerLat: 43.40,
-    centerLon: 21.90,
-    fill: '#fbbf24',
-    polygon: [
-      [43.72, 21.55], [43.45, 21.75], [43.45, 22.20], [43.45, 22.25],
-      [43.20, 22.15], [43.08, 22.15], [43.08, 21.55], [43.20, 21.55], [43.35, 21.55], [43.50, 21.55]
-    ]
-  },
-  {
-    id: 'pirotski',
-    name: 'Pirotski okrug',
-    macroRegion: 'Južna i istočna Srbija',
-    centerCity: 'Pirot',
-    centerLat: 43.20,
-    centerLon: 22.60,
-    fill: '#f59e0b',
-    polygon: [
-      [43.45, 22.25], [43.45, 22.65], [43.45, 23.00], [43.20, 23.00],
-      [42.95, 22.85], [42.95, 22.50], [42.95, 22.25], [43.08, 22.15], [43.20, 22.15]
-    ]
-  },
-  {
-    id: 'jablanicki',
-    name: 'Jablanički okrug',
-    macroRegion: 'Južna i istočna Srbija',
-    centerCity: 'Leskovac',
-    centerLat: 42.90,
-    centerLon: 21.95,
-    fill: '#d97706',
-    polygon: [
-      [43.08, 21.55], [43.08, 22.15], [43.08, 22.45], [42.90, 22.45],
-      [42.75, 22.45], [42.75, 21.95], [42.75, 21.45], [43.02, 21.25], [43.02, 21.55]
-    ]
-  },
-  {
-    id: 'pcinjski',
-    name: 'Pčinjski okrug',
-    macroRegion: 'Južna i istočna Srbija',
-    centerCity: 'Vranje',
-    centerLat: 42.50,
-    centerLon: 22.10,
-    fill: '#92400e',
-    polygon: [
-      [42.75, 21.45], [42.75, 21.95], [42.75, 22.45], [42.75, 22.60],
-      [42.50, 22.60], [42.25, 22.60], [42.25, 22.10], [42.25, 21.55], [42.50, 21.45]
-    ]
-  },
-
-  // --- KOSOVO I METOHIJA ---
-  {
-    id: 'kosovskomitrovacki',
-    name: 'Kosovskomitrovački okrug',
-    macroRegion: 'Kosovo i Metohija',
-    centerCity: 'Kosovska Mitrovica',
-    centerLat: 42.95,
-    centerLon: 20.75,
-    fill: '#a855f7',
-    polygon: [
-      [43.18, 20.55], [43.18, 20.85], [43.18, 21.05], [42.95, 21.05],
-      [42.75, 21.05], [42.75, 20.75], [42.75, 20.45], [42.92, 20.45], [42.92, 20.75]
-    ]
-  },
-  {
-    id: 'kosovski',
-    name: 'Kosovski okrug',
-    macroRegion: 'Kosovo i Metohija',
-    centerCity: 'Priština',
-    centerLat: 42.60,
-    centerLon: 21.20,
-    fill: '#9333ea',
-    polygon: [
-      [42.92, 20.95], [42.92, 21.20], [42.92, 21.45], [42.60, 21.45],
-      [42.28, 21.45], [42.28, 21.20], [42.28, 20.95], [42.60, 20.95]
-    ]
-  },
-  {
-    id: 'pecki',
-    name: 'Pećki okrug',
-    macroRegion: 'Kosovo i Metohija',
-    centerCity: 'Peć',
-    centerLat: 42.55,
-    centerLon: 20.35,
-    fill: '#7e22ce',
-    polygon: [
-      [42.85, 20.02], [42.85, 20.35], [42.85, 20.65], [42.55, 20.65],
-      [42.28, 20.65], [42.28, 20.35], [42.28, 20.02], [42.55, 20.02]
-    ]
-  },
-  {
-    id: 'prizrenski',
-    name: 'Prizrenski okrug',
-    macroRegion: 'Kosovo i Metohija',
-    centerCity: 'Prizren',
-    centerLat: 42.10,
-    centerLon: 20.75,
-    fill: '#6b21a8',
-    polygon: [
-      [42.35, 20.52], [42.35, 20.75], [42.35, 21.05], [42.10, 21.05],
-      [41.85, 21.05], [41.85, 20.75], [41.85, 20.45], [42.10, 20.45]
-    ]
-  },
-  {
-    id: 'kosovskopomoravski',
-    name: 'Kosovskopomoravski okrug',
-    macroRegion: 'Kosovo i Metohija',
-    centerCity: 'Gnjilane',
-    centerLat: 42.45,
-    centerLon: 21.60,
-    fill: '#8b5cf6',
-    polygon: [
-      [42.65, 21.35], [42.65, 21.60], [42.65, 21.85], [42.45, 21.85],
-      [42.25, 21.85], [42.25, 21.60], [42.25, 21.35], [42.45, 21.35]
-    ]
-  }
-];
+export const DISTRICT_META: Record<string, DistrictMeta> = {
+  severnobacki: { name: 'Severnobački okrug', macroRegion: 'Vojvodina', centerCity: 'Subotica', fill: '#38bdf8' },
+  zapadnobacki: { name: 'Zapadnobački okrug', macroRegion: 'Vojvodina', centerCity: 'Sombor', fill: '#0284c7' },
+  juznobacki: { name: 'Južnobački okrug', macroRegion: 'Vojvodina', centerCity: 'Novi Sad', fill: '#0ea5e9' },
+  severnobanatski: { name: 'Severnobanatski okrug', macroRegion: 'Vojvodina', centerCity: 'Kikinda', fill: '#0369a1' },
+  srednjobanatski: { name: 'Srednjobanatski okrug', macroRegion: 'Vojvodina', centerCity: 'Zrenjanin', fill: '#0284c7' },
+  juznobanatski: { name: 'Južnobanatski okrug', macroRegion: 'Vojvodina', centerCity: 'Pančevo', fill: '#075985' },
+  sremski: { name: 'Sremski okrug', macroRegion: 'Vojvodina', centerCity: 'Sremska Mitrovica', fill: '#0ea5e9' },
+  beograd: { name: 'Grad Beograd', macroRegion: 'Beograd', centerCity: 'Beograd', fill: '#6366f1' },
+  macvanski: { name: 'Mačvanski okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Šabac', fill: '#10b981' },
+  kolubarski: { name: 'Kolubarski okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Valjevo', fill: '#059669' },
+  podunavski: { name: 'Podunavski okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Smederevo', fill: '#047857' },
+  branicevski: { name: 'Braničevski okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Požarevac', fill: '#10b981' },
+  sumadijski: { name: 'Šumadijski okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Kragujevac', fill: '#34d399' },
+  pomoravski: { name: 'Pomoravski okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Jagodina', fill: '#059669' },
+  zlatiborski: { name: 'Zlatiborski okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Užice', fill: '#065f46' },
+  moravicki: { name: 'Moravički okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Čačak', fill: '#047857' },
+  raski: { name: 'Raški okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Kraljevo', fill: '#064e3b' },
+  rasinski: { name: 'Rasinski okrug', macroRegion: 'Šumadija i zapadna Srbija', centerCity: 'Kruševac', fill: '#10b981' },
+  borski: { name: 'Borski okrug', macroRegion: 'Južna i istočna Srbija', centerCity: 'Bor', fill: '#f59e0b' },
+  zajecarski: { name: 'Zaječarski okrug', macroRegion: 'Južna i istočna Srbija', centerCity: 'Zaječar', fill: '#d97706' },
+  toplicki: { name: 'Toplički okrug', macroRegion: 'Južna i istočna Srbija', centerCity: 'Prokuplje', fill: '#b45309' },
+  nisavski: { name: 'Nišavski okrug', macroRegion: 'Južna i istočna Srbija', centerCity: 'Niš', fill: '#fbbf24' },
+  pirotski: { name: 'Pirotski okrug', macroRegion: 'Južna i istočna Srbija', centerCity: 'Pirot', fill: '#f59e0b' },
+  jablanicki: { name: 'Jablanički okrug', macroRegion: 'Južna i istočna Srbija', centerCity: 'Leskovac', fill: '#d97706' },
+  pcinjski: { name: 'Pčinjski okrug', macroRegion: 'Južna i istočna Srbija', centerCity: 'Vranje', fill: '#92400e' },
+  kosovskomitrovacki: { name: 'Kosovskomitrovački okrug', macroRegion: 'Kosovo i Metohija', centerCity: 'Kosovska Mitrovica', fill: '#a855f7' },
+  kosovski: { name: 'Kosovski okrug', macroRegion: 'Kosovo i Metohija', centerCity: 'Priština', fill: '#9333ea' },
+  pecki: { name: 'Pećki okrug', macroRegion: 'Kosovo i Metohija', centerCity: 'Peć', fill: '#7e22ce' },
+  prizrenski: { name: 'Prizrenski okrug', macroRegion: 'Kosovo i Metohija', centerCity: 'Prizren', fill: '#6b21a8' },
+  kosovskopomoravski: { name: 'Kosovskopomoravski okrug', macroRegion: 'Kosovo i Metohija', centerCity: 'Gnjilane', fill: '#8b5cf6' },
+};
 
 export const NETWORK_STATIONS: MapStation[] = [
   // Beograd
@@ -541,9 +170,19 @@ export const NETWORK_LINKS: MapLink[] = [
 ];
 
 let map: L.Map | null = null;
-let districtLayers: Record<string, L.Polygon> = {};
+let districtLayer: L.GeoJSON | null = null;
 let stationMarkers: Record<string, L.CircleMarker> = {};
 let linkPolylines: L.Polyline[] = [];
+
+const GEOJSON_URL = '/serbia-districts.geojson';
+
+interface DistrictFeatureProps {
+  regionId: string;
+  regionName: string;
+  centerCity: string;
+  macroRegion: string;
+  fill: string;
+}
 
 function statusColor(status: StationStatus): string {
   switch (status) {
@@ -620,40 +259,70 @@ export function initNetworkMap(containerId: string): void {
     maxZoom: 19
   }).addTo(map);
 
-  // Render District Polygons (30 Okruzi) over OSM tiles with subtle translucent fill and crisp cyan outlines
-  DISTRICTS.forEach(district => {
-    const latLons: L.LatLngExpression[] = district.polygon.map(p => [p[0], p[1]]);
-    const polygon = L.polygon(latLons, {
-      color: '#38bdf8',
-      weight: 1.5,
-      opacity: 0.8,
-      dashArray: '3, 4',
-      fillColor: district.fill,
-      fillOpacity: 0.15
-    }).addTo(map!);
-
-    const stationsInDistrict = NETWORK_STATIONS.filter(s => s.region === district.id).length;
-    polygon.bindTooltip(`
-      <div style="font-family:'Inter',sans-serif;">
-        <strong style="color:#f8fafc;font-size:0.88rem;">${district.name}</strong><br/>
-        <span style="color:#94a3b8;font-size:0.78rem;">Upravni centar: ${district.centerCity}</span><br/>
-        <span style="color:#94a3b8;font-size:0.78rem;">Regija: ${district.macroRegion}</span><br/>
-        <span style="color:#38bdf8;font-size:0.78rem;font-weight:600;">Stanica: ${stationsInDistrict}</span>
-      </div>
-    `, { sticky: true, opacity: 0.95 });
-
-    polygon.on('mouseover', () => {
-      polygon.setStyle({ fillOpacity: 0.35, weight: 2.5, color: '#f59e0b' });
-    });
-    polygon.on('mouseout', () => {
-      polygon.setStyle({ fillOpacity: 0.15, weight: 1.5, color: '#38bdf8' });
-    });
-
-    districtLayers[district.id] = polygon;
-  });
-
+  // Render real district (okrug) boundaries from GeoJSON, then overlay links & stations.
+  void loadDistrictBoundaries();
   renderLinks({});
   renderStations({});
+}
+
+/**
+ * Loads accurate district boundary polygons from the bundled GeoJSON
+ * (real geometry sourced from geoBoundaries) and renders them with Leaflet.
+ */
+async function loadDistrictBoundaries(): Promise<void> {
+  if (!map) return;
+
+  try {
+    const res = await fetch(GEOJSON_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const geojson = await res.json();
+
+    if (districtLayer) {
+      map.removeLayer(districtLayer);
+      districtLayer = null;
+    }
+
+    const baseStyle = (props: DistrictFeatureProps): L.PathOptions => ({
+      color: '#38bdf8',
+      weight: 1.2,
+      opacity: 0.85,
+      fillColor: props.fill,
+      fillOpacity: 0.18
+    });
+
+    districtLayer = L.geoJSON(geojson, {
+      style: (feature) => baseStyle(feature!.properties as DistrictFeatureProps),
+      onEachFeature: (feature, layer) => {
+        const props = feature.properties as DistrictFeatureProps;
+        const stationsInDistrict = NETWORK_STATIONS.filter(s => s.region === props.regionId).length;
+
+        layer.bindTooltip(`
+          <div style="font-family:'Inter',sans-serif;">
+            <strong style="color:#f8fafc;font-size:0.88rem;">${props.regionName}</strong><br/>
+            <span style="color:#94a3b8;font-size:0.78rem;">Upravni centar: ${props.centerCity}</span><br/>
+            <span style="color:#94a3b8;font-size:0.78rem;">Regija: ${props.macroRegion}</span><br/>
+            <span style="color:#38bdf8;font-size:0.78rem;font-weight:600;">Stanica: ${stationsInDistrict}</span>
+          </div>
+        `, { sticky: true, opacity: 0.95 });
+
+        layer.on('mouseover', () => {
+          (layer as L.Path).setStyle({ fillOpacity: 0.4, weight: 2.5, color: '#f59e0b' });
+        });
+        layer.on('mouseout', () => {
+          (layer as L.Path).setStyle(baseStyle(props));
+        });
+      }
+    }).addTo(map);
+
+    // Fit the view snugly to the real national boundary.
+    map.fitBounds(districtLayer.getBounds(), { padding: [12, 12] });
+
+    // Keep stations & links visually above the filled polygons.
+    linkPolylines.forEach(l => l.bringToFront());
+    Object.values(stationMarkers).forEach(m => m.bringToFront());
+  } catch (err) {
+    console.log('[v0] Failed to load district boundaries:', err);
+  }
 }
 
 function renderLinks(stationStatuses: Record<string, StationStatus>): void {
@@ -700,7 +369,7 @@ function renderStations(stationStatuses: Record<string, StationStatus>): void {
   NETWORK_STATIONS.forEach(station => {
     const status = stationStatuses[station.id] ?? 'UNKNOWN';
     const color = statusColor(status);
-    const district = DISTRICTS.find(d => d.id === station.region);
+    const district = DISTRICT_META[station.region];
 
     const marker = L.circleMarker([station.lat, station.lon], {
       radius: 7,

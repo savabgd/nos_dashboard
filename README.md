@@ -21,10 +21,30 @@ docker compose --profile setup up clickhouse-init data-generator
 
 # 3. Frontend (dev)
 docker compose --profile dev up frontend
+
+# 4. Produkcija (nginx + build-ovani frontend)
+docker compose --profile prod up --build nginx
+
+# 5. Monitoring (Prometheus scrapuje /metrics)
+docker compose --profile monitoring up prometheus   # http://localhost:9090
 ```
 
-Dashboard: http://localhost:3000  
+Dashboard: http://localhost:3000 (dev) / http://localhost (prod)  
 API docs: http://localhost:8080/docs
+
+## Testiranje
+
+```bash
+# Backend (Python) — root direktorijum
+python -m pytest -q
+
+# Frontend (TypeScript)
+npx vitest run          # testovi
+npx tsc --noEmit        # type-check
+npx eslint app.ts network-map.ts stations.ts --ext ts   # lint
+```
+
+CI (`Github Actions`) pokreće sve navedeno + `docker build` obe slike na `main` push.
 
 ## Lokalni razvoj (bez Docker-a)
 
@@ -70,11 +90,36 @@ Pragovi se podešavaju preko env varijabli (`SLA_*`).
 
 | Endpoint | Opis |
 |----------|------|
-| `GET /api/kpis` | KPI po ćeliji |
+| `GET /api/kpis` | KPI po ćeliji (filteri: `cluster`, `station`, `cell`, `band`, `hours`) |
 | `GET /api/kpis/aggregated` | Agregirani KPI |
+| `GET /api/kpis/stream` | SSE stream u realnom vremenu |
 | `GET /api/kpis/export` | CSV/JSON export |
 | `GET /api/clusters` | Lista klastera |
 | `GET /health` | Health check |
+| `GET /metrics` | Prometheus metrike |
+
+## Notifikacije (webhook)
+
+Kada se pojave nove ćelije u kritičnom stanju (`check_alerts`), backend šalje webhook
+na konfigurisanu URL adresu. JSON payload:
+
+```
+{
+  "source": "volte-kpi-dashboard",
+  "type": "alert.created",
+  "timestamp": "2026-08-06T00:00:00Z",
+  "alerts": [{"id": "...", "cell": "BGD_001", ...}]
+}
+```
+
+Omogućava sa `NOTIFY_WEBHOOK_ENABLED=true` i `NOTIFY_WEBHOOK_URL=...` (pogledaj `.env.example`).
+
+## Frontend — statistika i dizajn
+
+- **Light/Dark tema** — prebacivanje preko dugmeta, čuva izbor u `localStorage` (default `system`).
+- **Live badge** – indikator da li su podaci live, vreme poslednjeg ažuriranja.
+- **Pretraga & filter tablice** – po celiji/stanici/klasteru, "Samo loše" (BAD) filter, limit 500 redova.
+- **Network map** – Leaflet karta se učitava lazily (odvojen JS chunk), topologija u `stations.ts`.
 
 ## C++ KPI kalkulator (referenca)
 
@@ -89,11 +134,19 @@ Python implementacija u `server/kpi_calculator.py` koristi iste formule.
 
 ```
 ├── index.html, app.ts, styles.css   # Frontend (Vite + TypeScript)
-├── server/                          # FastAPI backend
+├── stations.ts                      # Statika topologije (bez Leaflet zavisnosti)
+├── network-map.ts                   # Leaflet mapa (lazy chunk)
+├── server/                          # FastAPI backend (+ tests/)
 ├── kpi_calc.cpp/h                   # C++ referentna implementacija
 ├── 01_schema.sql                    # ClickHouse schema
+├── 02_materialized_views.sql        # Agregacioni materijalizovani pogled
+├── 03_indexes_ttl.sql               # Indeksi + TTL politike
 ├── 02_sample_data.py                # Generator test podataka
-└── docker-compose.yml
+├── frontend.Dockerfile              # Build slike (korišćeno u CI/CD)
+├── prometheus.yml                   # Scrape konfiguracija za /metrics
+├── docker-compose.yml               # Glavna orchestration
+├── .github/workflows/ci.yml         # CI workflow
+└── README.md                        # Dokumentacija
 ```
 
 ## Napomene

@@ -4,7 +4,7 @@ Replicates the C++ calculateKpis() function for consistency
 """
 
 import math
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from datetime import datetime
 

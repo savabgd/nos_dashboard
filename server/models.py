@@ -5,8 +5,11 @@ Defines request/response schemas
 
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime as dt
 from enum import Enum
+
+
+DateTime = dt
 
 
 class CellStatus(str, Enum):
@@ -115,7 +118,7 @@ class KpiCellData(BaseModel):
     stanica: str = Field(description="Station identifier")
     klaster: str = Field(description="Cluster identifier")
     band: str = Field(description="Frequency band")
-    datetime: Optional[datetime] = Field(
+    datetime: Optional[DateTime] = Field(
         default=None,
         description="Timestamp of the data"
     )
@@ -169,8 +172,8 @@ class KpiResponse(BaseModel):
         description="Aggregated metrics"
     )
     count: int = Field(default=0, description="Total number of records")
-    timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+    timestamp: DateTime = Field(
+        default_factory=DateTime.utcnow,
         description="Response timestamp"
     )
     
@@ -201,7 +204,7 @@ class AggregatedKpiResponse(BaseModel):
     )
     group_by: str = Field(description="Grouping field")
     total_count: int = Field(default=0, description="Total records")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: DateTime = Field(default_factory=DateTime.utcnow)
 
 
 class HealthResponse(BaseModel):
@@ -210,7 +213,7 @@ class HealthResponse(BaseModel):
     version: str = Field(description="API version")
     database: str = Field(description="Database connection status")
     cache: str = Field(description="Cache connection status")
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: DateTime = Field(default_factory=DateTime.utcnow)
 
 
 class ErrorResponse(BaseModel):
@@ -222,7 +225,7 @@ class ErrorResponse(BaseModel):
         default=None,
         description="Additional error details"
     )
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: DateTime = Field(default_factory=DateTime.utcnow)
 
 
 class Alert(BaseModel):
@@ -235,8 +238,8 @@ class Alert(BaseModel):
     threshold: float = Field(description="Threshold value")
     severity: str = Field(description="Alert severity: LOW, MEDIUM, HIGH, CRITICAL")
     status: str = Field(description="Alert status: NEW, ACKNOWLEDGED, RESOLVED")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    resolved_at: Optional[datetime] = Field(default=None)
+    created_at: DateTime = Field(default_factory=DateTime.utcnow)
+    resolved_at: Optional[DateTime] = Field(default=None)
 
 
 class AlertResponse(BaseModel):
@@ -244,7 +247,7 @@ class AlertResponse(BaseModel):
     success: bool = Field(default=True)
     alerts: List[Alert] = Field(default_factory=list)
     active_count: int = Field(default=0)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: DateTime = Field(default_factory=DateTime.utcnow)
 
 
 class ExportRequest(BaseModel):

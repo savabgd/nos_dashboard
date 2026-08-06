@@ -171,15 +171,23 @@ class ClickHouseClient:
     def get_latest_kpi(
         self, 
         hours: int = 24,
-        limit: int = 1000
+        limit: int = 1000,
+        cluster: Optional[str] = None,
+        station: Optional[str] = None,
+        cell: Optional[str] = None,
+        band: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get latest KPI data for each cell
-        
+
         Args:
             hours: Time range in hours
             limit: Maximum number of records
-            
+            cluster: Filter by cluster
+            station: Filter by station
+            cell: Filter by cell
+            band: Filter by band
+
         Returns:
             List of PM counter dictionaries (latest per cell)
         """
@@ -188,13 +196,33 @@ class ClickHouseClient:
         end_time = datetime.utcnow()
         start_time = end_time - timedelta(hours=hours)
         
-        query = """
+        # Build WHERE clause so filters are applied in SQL (uses skip indexes)
+        where_clauses = ["datetime >= %(start_time)s", "datetime <= %(end_time)s"]
+        params: Dict[str, Any] = {"start_time": start_time, "end_time": end_time}
+        
+        if cluster:
+            where_clauses.append("klaster = %(cluster)s")
+            params["cluster"] = cluster
+        if station:
+            where_clauses.append("stanica = %(station)s")
+            params["station"] = station
+        if cell:
+            where_clauses.append("celija = %(cell)s")
+            params["cell"] = cell
+        if band:
+            where_clauses.append("band = %(band)s")
+            params["band"] = band
+        
+        where = " AND ".join(where_clauses) or "1=1"
+        params["limit"] = limit
+        
+        query = f"""
         WITH latest_records AS (
             SELECT 
                 celija, stanica, klaster, band,
                 max(datetime) as latest_dt
             FROM pm_counters
-            WHERE datetime >= %(start_time)s AND datetime <= %(end_time)s
+            WHERE {where}
             GROUP BY celija, stanica, klaster, band
         )
         SELECT 
@@ -231,7 +259,7 @@ class ClickHouseClient:
         try:
             result = self.client.execute(
                 query, 
-                {"start_time": start_time, "end_time": end_time, "limit": limit},
+                params,
                 with_column_types=False
             )
             

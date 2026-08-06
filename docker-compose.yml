@@ -25,6 +25,8 @@ services:
       - clickhouse_log:/var/log/clickhouse
       - clickhouse_config:/etc/clickhouse-server
       - ./01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./02_materialized_views.sql:/docker-entrypoint-initdb.d/02_materialized_views.sql
+      - ./03_indexes_ttl.sql:/docker-entrypoint-initdb.d/03_indexes_ttl.sql
     environment:
       - CLICKHOUSE_DB=volte_kpi
       - CLICKHOUSE_USER=default
@@ -114,7 +116,9 @@ services:
   # Nginx Reverse Proxy (Production)
   # -----------------------------------------------------------------------------
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
     container_name: volte-kpi-nginx
     hostname: nginx
     ports:
@@ -127,6 +131,25 @@ services:
       - backend
     profiles:
       - prod
+    networks:
+      - volte-kpi-network
+
+  # -----------------------------------------------------------------------------
+  # Prometheus Monitoring
+  # -----------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: volte-kpi-prometheus
+    hostname: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - backend
+    profiles:
+      - monitoring
     networks:
       - volte-kpi-network
 
@@ -164,7 +187,9 @@ services:
         condition: service_healthy
     volumes:
       - ./01_schema.sql:/schema.sql:ro
-    entrypoint: ["/bin/bash", "-c", "clickhouse-client --host clickhouse --multiquery < /schema.sql && echo 'Schema applied successfully'"]
+      - ./02_materialized_views.sql:/schema2.sql:ro
+      - ./03_indexes_ttl.sql:/schema3.sql:ro
+    entrypoint: ["/bin/bash", "-c", "clickhouse-client --host clickhouse --multiquery < /schema.sql && clickhouse-client --host clickhouse --multiquery < /schema2.sql && clickhouse-client --host clickhouse --multiquery < /schema3.sql && echo 'Schema applied successfully'"]
     profiles:
       - setup
     networks:
@@ -204,6 +229,7 @@ volumes:
   clickhouse_log:
   clickhouse_config:
   redis_data:
+  prometheus_data:
 
 # -----------------------------------------------------------------------------
 # Networks

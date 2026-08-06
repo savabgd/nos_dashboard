@@ -1,0 +1,13 @@
+# VoLTE KPI Dashboard - Prometheus Configuration
+# ===============================================
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: "volte-kpi-backend"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8080"]
+        labels:
+          service: volte-kpi-dashboard

@@ -7,7 +7,7 @@
  */
 
 import Chart from 'chart.js/auto';
-import { initNetworkMap, updateNetworkMap, NETWORK_STATIONS } from './network-map';
+import { NETWORK_STATIONS } from './stations';
 
 // ============================================================================
 // Types and Interfaces
@@ -72,8 +72,10 @@ export interface ApiError {
 // Load configuration from environment variables
 const metaEnv = (import.meta as any).env || {};
 const CONFIG = {
-  API_BASE_URL: metaEnv.VITE_API_BASE_URL || 'http://localhost:8080',
+  API_BASE_URL: metaEnv.VITE_API_BASE_URL ?? 'http://localhost:8080',
   AUTO_REFRESH_INTERVAL: parseInt(metaEnv.VITE_AUTO_REFRESH_INTERVAL || '300000'),
+  USE_SSE: (metaEnv.VITE_SSE_ENABLED ?? 'true') === 'true',
+  SSE_PUSH_INTERVAL: parseInt(metaEnv.VITE_SSE_INTERVAL || '30'),
 };
 
 // SLA Thresholds - configurable via environment or hardcoded defaults
@@ -90,9 +92,11 @@ const SLA: SlaThresholds = {
 // ============================================================================
 
 let kpiData: KpiCell[] = [];
-let charts: Record<string, Chart> = {};
+const charts: Record<string, Chart> = {};
 let autoRefreshInterval: number | null = null;
 let prevMetrics: KpiMetrics | null = null;
+let sseSource: EventSource | null = null;
+let networkMapModule: typeof import('./network-map') | null = null;
 
 // ============================================================================
 // Utility Functions
@@ -142,7 +146,7 @@ function getSelectedHours(): number {
 /**
  * Normalize cell data - ensure all required fields are present
  */
-function normalizeCell(cell: Partial<KpiCell>): KpiCell {
+function normalizeCell(cell: { [K in keyof KpiCell]?: KpiCell[K] | string }): KpiCell {
   return {
     celija: String(cell.celija ?? ''),
     stanica: String(cell.stanica ?? ''),
@@ -156,7 +160,7 @@ function normalizeCell(cell: Partial<KpiCell>): KpiCell {
     volteMobilitySR: toNumber(cell.volteMobilitySR),
     pdcchErrorRateVolte: toNumber(cell.pdcchErrorRateVolte),
     volteDropsCount: Math.trunc(toNumber(cell.volteDropsCount)),
-    status: cell.status,
+    status: cell.status as KpiCell['status'],
     datetime: cell.datetime,
   };
 }
@@ -258,15 +262,35 @@ function appendCell(row: HTMLTableRowElement, value: string | number, className:
 }
 
 /**
- * Update the KPI data table
+ * Update the KPI data table (search + critical-only filters applied)
  */
+const MAX_TABLE_ROWS = 500;
+let tableSearch = '';
+let showOnlyCritical = false;
+let searchTimer: number | null = null;
+
+function filterCells(cells: KpiCell[], query: string, showBadOnly: boolean): KpiCell[] {
+  const q = query.trim().toLowerCase();
+  return cells.filter(cell => {
+    if (showBadOnly && getCellStatus(cell) !== 'BAD') return false;
+    if (!q) return true;
+    return cell.celija.toLowerCase().includes(q)
+      || cell.stanica.toLowerCase().includes(q)
+      || cell.klaster.toLowerCase().includes(q);
+  }).slice(0, MAX_TABLE_ROWS);
+}
+
+function getFilteredCells(): KpiCell[] {
+  return filterCells(kpiData, tableSearch, showOnlyCritical);
+}
+
 function updateTable(): void {
   const tbody = document.getElementById('tableBody');
   if (!tbody) return;
   
   tbody.replaceChildren();
   
-  kpiData.forEach(cell => {
+  getFilteredCells().forEach(cell => {
     const row = document.createElement('tr');
     row.dataset.station = cell.stanica;
     const status = getCellStatus(cell);
@@ -551,10 +575,14 @@ async function loadData(): Promise<void> {
     prevMetrics = computeMetrics(kpiData.length ? kpiData : null);
     kpiData = await fetchKpiData();
     updateDashboard();
+    updateLastUpdated();
+    setLiveBadge('muted');
   } catch (error) {
     console.error('Error loading KPI data, using mock data:', error);
     kpiData = generateMockData(getSelectedHours());
     updateDashboard();
+    setLiveBadge('bad');
+    showToast('Greška pri učitavanju podataka — prikazujem mock podatke', 'error');
   }
 }
 
@@ -568,7 +596,7 @@ function updateDashboard(): void {
   updateSummaryCards(curr);
   updateTable();
   updateCharts();
-  updateNetworkMap(kpiData);
+  networkMapModule?.updateNetworkMap?.(kpiData);
 }
 
 /**
@@ -590,11 +618,25 @@ function updateSummaryCards(curr: KpiMetrics | null): void {
 }
 
 /**
- * Start auto-refresh
+ * Apply a full KPI response payload to the dashboard
+ */
+function applyKpiPayload(payload: ApiResponse): void {
+  const rows = Array.isArray(payload) ? payload : payload.data;
+  if (!Array.isArray(rows)) return;
+  kpiData = rows as KpiCell[];
+  updateDashboard();
+}
+
+/**
+ * Start auto-refresh. Prefers SSE push; falls back to polling
+ * when SSE is disabled or unsupported by the browser.
  */
 function startAutoRefresh(): void {
-  if (autoRefreshInterval) {
-    clearInterval(autoRefreshInterval);
+  stopAutoRefresh();
+  
+  if (CONFIG.USE_SSE && typeof EventSource !== 'undefined') {
+    connectSse();
+    return;
   }
   
   autoRefreshInterval = window.setInterval(() => {
@@ -603,12 +645,155 @@ function startAutoRefresh(): void {
 }
 
 /**
+ * Connect (or reconnect) the SSE stream for the currently selected time range
+ */
+function connectSse(): void {
+  disconnectSse();
+  
+  const hours = getSelectedHours();
+  const url = `${CONFIG.API_BASE_URL}/api/kpis/stream?hours=${encodeURIComponent(hours.toString())}&interval=${CONFIG.SSE_PUSH_INTERVAL}`;
+  console.log(`Opening SSE stream: ${url}`);
+  
+  const source = new EventSource(url);
+  sseSource = source;
+  
+  source.addEventListener('kpis', (event) => {
+    try {
+      const payload = JSON.parse((event as MessageEvent).data) as ApiResponse;
+      prevMetrics = computeMetrics(kpiData.length ? kpiData : null);
+      applyKpiPayload(payload);
+      updateLastUpdated();
+      setLiveBadge('live');
+    } catch (error) {
+      console.error('Error handling SSE kpis event:', error);
+    }
+  });
+  
+  source.addEventListener('open', () => {
+    setLiveBadge('live');
+  });
+  
+  source.addEventListener('error', (event) => {
+    console.warn('SSE stream error, will retry automatically:', event);
+    setLiveBadge('bad');
+  });
+}
+
+/**
+ * Close the SSE stream if open
+ */
+function disconnectSse(): void {
+  if (sseSource) {
+    sseSource.close();
+    sseSource = null;
+  }
+}
+
+/**
  * Stop auto-refresh
  */
 function stopAutoRefresh(): void {
+  disconnectSse();
   if (autoRefreshInterval) {
     clearInterval(autoRefreshInterval);
     autoRefreshInterval = null;
+  }
+}
+
+// ============================================================================
+// UX Helpers (theme, toast, live badge, lazy map loading)
+// ============================================================================
+
+const THEME_KEY = 'volte-theme';
+
+/**
+ * Resolve the initial theme: saved preference, then env, then OS setting
+ */
+function getInitialTheme(): 'dark' | 'light' {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'dark' || saved === 'light') return saved;
+  } catch { /* localStorage unavailable */ }
+  const env = (metaEnv.VITE_THEME as string) || 'system';
+  if (env === 'dark' || env === 'light') return env;
+  if (typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: light)').matches) {
+    return 'light';
+  }
+  return 'dark';
+}
+
+/**
+ * Apply a theme to the document
+ */
+function applyTheme(theme: 'dark' | 'light'): void {
+  document.documentElement.dataset.theme = theme;
+  const btn = document.getElementById('themeToggle');
+  if (btn) btn.textContent = theme === 'light' ? '☀' : '☾';
+}
+
+/**
+ * Initialize the theme on startup
+ */
+function initTheme(): void {
+  applyTheme(getInitialTheme());
+}
+
+/**
+ * Toggle between light and dark theme (persisted)
+ */
+function toggleTheme(): void {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  try {
+    localStorage.setItem(THEME_KEY, next);
+  } catch { /* ignore */ }
+  applyTheme(next);
+}
+
+/**
+ * Show a transient toast notification
+ */
+function showToast(message: string, type: 'info' | 'error' | 'success' = 'info', duration = 3500): void {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const el = document.createElement('div');
+  el.className = `toast ${type === 'info' ? '' : type}`;
+  el.textContent = message;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('hide');
+    setTimeout(() => el.remove(), 400);
+  }, duration);
+}
+
+/**
+ * Update the LIVE badge state
+ */
+function setLiveBadge(state: 'muted' | 'live' | 'bad'): void {
+  const badge = document.getElementById('liveBadge');
+  if (!badge) return;
+  badge.classList.toggle('live', state === 'live');
+  badge.classList.toggle('bad', state === 'bad');
+}
+
+/**
+ * Update the "last updated" indicator in the toolbar
+ */
+function updateLastUpdated(): void {
+  setText('lastUpdated', `Ažurirano: ${new Date().toLocaleTimeString('sr-RS')}`);
+}
+
+/**
+ * Lazy-load the network map module (Leaflet + GeoJSON) on first use so it
+ * does not block initial paint of the dashboard.
+ */
+async function loadNetworkMap(): Promise<void> {
+  try {
+    networkMapModule = await import('./network-map');
+    networkMapModule.initNetworkMap?.('networkMap');
+    if (kpiData.length) networkMapModule.updateNetworkMap?.(kpiData);
+  } catch (error) {
+    console.error('Failed to load network map module:', error);
+    showToast('Mrežna mapa se nije učitana', 'error');
   }
 }
 
@@ -668,13 +853,47 @@ function setupEventListeners(): void {
   const refreshBtn = document.getElementById('refreshBtn');
   const timeRange = document.getElementById('timeRange') as HTMLSelectElement;
   const exportCsvBtn = document.getElementById('exportCsvBtn');
+  const themeToggle = document.getElementById('themeToggle');
+  const tableSearchInput = document.getElementById('tableSearch') as HTMLInputElement;
+  const toggleBadBtn = document.getElementById('toggleBadBtn');
   
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => loadData());
   }
   
   if (timeRange) {
-    timeRange.addEventListener('change', () => loadData());
+    timeRange.addEventListener('change', () => {
+      if (sseSource) {
+        connectSse();
+      } else {
+        loadData();
+      }
+    });
+  }
+  
+  if (tableSearchInput) {
+    tableSearchInput.addEventListener('input', () => {
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => {
+        tableSearch = tableSearchInput.value;
+        updateTable();
+      }, 200);
+    });
+  }
+  
+  if (toggleBadBtn) {
+    toggleBadBtn.addEventListener('click', () => {
+      showOnlyCritical = !showOnlyCritical;
+      toggleBadBtn.classList.toggle('active', showOnlyCritical);
+      updateTable();
+    });
+  }
+  
+  if (themeToggle) {
+    themeToggle.addEventListener('click', () => {
+      toggleTheme();
+      showToast(themeToggle.textContent === '☾' ? 'Tamna tema' : 'Svetla tema', 'success', 1200);
+    });
   }
   
   if (exportCsvBtn) {
@@ -704,9 +923,10 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log(`Auto-refresh interval: ${CONFIG.AUTO_REFRESH_INTERVAL}ms`);
   
   setupEventListeners();
-  initNetworkMap('networkMap');
+  initTheme();
   loadData();
   startAutoRefresh();
+  void loadNetworkMap();
 });
 
 // Cleanup on page unload
@@ -724,6 +944,11 @@ export {
   charts,
   SLA,
   CONFIG,
+  toNumber,
+  formatPercent,
+  getKpiClass,
+  updateDelta,
+  escapeCsvField,
   computeMetrics,
   getCellStatus,
   normalizeCell,
@@ -732,4 +957,16 @@ export {
   loadData,
   updateDashboard,
   exportCSV,
+  connectSse,
+  disconnectSse,
+  applyKpiPayload,
+  initTheme,
+  toggleTheme,
+  getInitialTheme,
+  applyTheme,
+  showToast,
+  setLiveBadge,
+  updateLastUpdated,
+  getFilteredCells,
+  filterCells,
 };

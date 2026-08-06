@@ -1,17 +1,21 @@
-"""
+﻿"""
 VoLTE KPI API - FastAPI Main Application
 Main REST API endpoint for KPI data
 """
 
 import logging
 import time
+import json
+from asyncio import sleep
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 
+import httpx
+
 from fastapi import FastAPI, HTTPException, Query, Depends, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.exceptions import RequestValidationError
@@ -100,7 +104,7 @@ async def validation_exception_handler(
             code=422,
             details={"errors": exc.errors()},
             timestamp=datetime.utcnow()
-        ).model_dump()
+        ).model_dump(mode="json")
     )
 
 
@@ -114,7 +118,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             error=exc.detail,
             code=exc.status_code,
             timestamp=datetime.utcnow()
-        ).model_dump()
+        ).model_dump(mode="json")
     )
 
 
@@ -155,6 +159,31 @@ async def get_db():
 
 
 # ============================================================================
+# Monitoring
+# ============================================================================
+
+# Simple in-process metrics exposed in Prometheus text format.
+_request_counts: Dict[str, int] = {}
+_request_latency: Dict[str, float] = {"sum": 0.0, "count": 0}
+_app_start_time = time.time()
+
+
+@app.middleware("http")
+async def record_request_metrics(request: Request, call_next):
+    """Record request counts and latency for the /metrics endpoint."""
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+
+    if settings.METRICS_ENABLED:
+        route = request.url.path
+        _request_counts[route] = _request_counts.get(route, 0) + 1
+        _request_latency["sum"] += duration
+        _request_latency["count"] += 1
+    return response
+
+
+# ============================================================================
 # API Endpoints
 # ============================================================================
 
@@ -180,6 +209,53 @@ async def health_check():
         database=db_status,
         cache=cache_status,
         timestamp=datetime.utcnow()
+    )
+
+
+@app.get(
+    "/metrics",
+    tags=["Monitoring"],
+    summary="Prometheus metrics",
+    description="Expose application metrics in Prometheus text exposition format"
+)
+async def metrics_endpoint():
+    """Prometheus metrics endpoint"""
+    uptime_seconds = time.time() - _app_start_time
+    total_count = _request_latency["count"]
+    total_sum = _request_latency["sum"]
+    
+    lines = [
+        "# HELP volte_kpi_uptime_seconds Process uptime in seconds",
+        "# TYPE volte_kpi_uptime_seconds gauge",
+        f"volte_kpi_uptime_seconds {uptime_seconds:.3f}",
+        "# HELP volte_kpi_http_requests_total Total HTTP requests by route",
+        "# TYPE volte_kpi_http_requests_total counter",
+    ]
+    for route in sorted(_request_counts):
+        lines.append(
+            f"volte_kpi_http_requests_total{{route=\"{route}\"}} {_request_counts[route]}"
+        )
+    lines.append(
+        "# HELP volte_kpi_http_request_duration_seconds_sum Total request duration"
+    )
+    lines.append("# TYPE volte_kpi_http_request_duration_seconds_sum counter")
+    lines.append(
+        f"volte_kpi_http_request_duration_seconds_sum {total_sum:.6f}"
+    )
+    lines.append(
+        "# HELP volte_kpi_http_request_duration_seconds_count Total number of requests"
+    )
+    lines.append("# TYPE volte_kpi_http_request_duration_seconds_count counter")
+    lines.append(f"volte_kpi_http_request_duration_seconds_count {total_count}")
+    lines.append("# HELP volte_kpi_db_connected Database connectivity (1=connected)")
+    lines.append("# TYPE volte_kpi_db_connected gauge")
+    lines.append(
+        f"volte_kpi_db_connected {1 if clickhouse_client.check_health() else 0}"
+    )
+    
+    return Response(
+        content="\n".join(lines) + "\n",
+        media_type="text/plain; version=0.0.4",
     )
 
 
@@ -235,11 +311,15 @@ async def get_kpis(
     
     logger.debug(f"Fetching KPI data from database")
     
-    # Fetch raw PM counter data
+    # Fetch raw PM counter data (filters applied in SQL for performance)
     start_time = time.time()
     pm_data = clickhouse_client.get_latest_kpi(
         hours=hours,
-        limit=10000
+        limit=10000,
+        cluster=cluster,
+        station=station,
+        cell=cell,
+        band=band,
     )
     db_time = time.time() - start_time
     logger.debug(f"Database query took {db_time:.3f}s")
@@ -253,18 +333,8 @@ async def get_kpis(
             count=0,
             timestamp=datetime.utcnow()
         )
-        cache_client.set(cache_key, response.model_dump(), ttl=60)
+        cache_client.set(cache_key, response.model_dump(mode="json"), ttl=60)
         return response
-    
-    # Apply filters
-    if cluster:
-        pm_data = [p for p in pm_data if p.get("klaster") == cluster]
-    if station:
-        pm_data = [p for p in pm_data if p.get("stanica") == station]
-    if cell:
-        pm_data = [p for p in pm_data if p.get("celija") == cell]
-    if band:
-        pm_data = [p for p in pm_data if p.get("band") == band]
     
     # Calculate KPIs for each record
     calc_start = time.time()
@@ -295,7 +365,7 @@ async def get_kpis(
     )
     
     # Cache response
-    cache_client.set(cache_key, response.model_dump(), ttl=settings.CACHE_TTL)
+    cache_client.set(cache_key, response.model_dump(mode="json"), ttl=settings.CACHE_TTL)
     
     logger.info(f"Returning {len(kpi_data)} KPI records")
     return response
@@ -366,7 +436,7 @@ async def get_aggregated_kpis(
         timestamp=datetime.utcnow()
     )
     
-    cache_client.set(cache_key, response.model_dump(), ttl=settings.CACHE_TTL)
+    cache_client.set(cache_key, response.model_dump(mode="json"), ttl=settings.CACHE_TTL)
     return response
 
 
@@ -397,8 +467,14 @@ async def export_kpis(
     - JSON: JSON array of KPI data
     """
     # Get KPI data
-    kpi_response = await get_kpis(hours=hours)
-    kpi_data = kpi_response.data
+    kpi_response = await get_kpis(
+        hours=hours,
+        cluster=None,
+        station=None,
+        cell=None,
+        band=None,
+    )
+    kpi_data = [kpi.model_dump(mode="json") for kpi in kpi_response.data]
     
     if format.lower() == "csv":
         # Generate CSV
@@ -570,6 +646,31 @@ async def get_cells(
 _in_memory_alerts: Dict[str, Dict] = {}
 
 
+async def send_webhook_notification(alerts: List[Dict[str, Any]]) -> None:
+    """Send new alerts to the configured webhook endpoint."""
+    if not (settings.NOTIFY_WEBHOOK_ENABLED and settings.NOTIFY_WEBHOOK_URL):
+        return
+
+    payload = {
+        "source": "volte-kpi-dashboard",
+        "type": "alert.created",
+        "timestamp": datetime.utcnow().isoformat(),
+        "alerts": alerts,
+    }
+
+    async with httpx.AsyncClient(timeout=settings.NOTIFY_WEBHOOK_TIMEOUT) as client:
+        try:
+            response = await client.post(settings.NOTIFY_WEBHOOK_URL, json=payload)
+            if response.status_code >= 400:
+                logger.warning(
+                    f"Webhook notification failed with status {response.status_code}"
+                )
+            else:
+                logger.info(f"Webhook notification sent: {len(alerts)} alerts")
+        except httpx.HTTPError as exc:
+            logger.error(f"Webhook notification error: {exc}")
+
+
 @app.get(
     "/api/alerts",
     response_model=AlertResponse,
@@ -614,7 +715,13 @@ async def check_alerts(
     Creates alerts when KPI values exceed configured thresholds.
     """
     # Get KPI data
-    kpi_response = await get_kpis(hours=hours)
+    kpi_response = await get_kpis(
+        hours=hours,
+        cluster=None,
+        station=None,
+        cell=None,
+        band=None,
+    )
     
     thresholds = {
         "access_fail_rate": settings.SLA_ACCESS_FAIL_RATE,
@@ -625,17 +732,17 @@ async def check_alerts(
     }
     
     new_alerts = []
-    for kpi in kpi_response.data:
+    for kpi in (k.model_dump(mode="json") for k in kpi_response.data):
         cell = kpi.get("celija", "unknown")
         cluster = kpi.get("klaster", "unknown")
         
         # Check each metric
         checks = [
-            ("volteAccessFailureRate", "Access Failure Rate", thresholds["access_fail_rate"], "HIGH"),
-            ("volteDropRate", "Drop Rate", thresholds["drop_rate"], "HIGH"),
+            ("volteAccessFailureRate", "Access Failure Rate", thresholds["access_fail_rate"], "HIGH", False),
+            ("volteDropRate", "Drop Rate", thresholds["drop_rate"], "HIGH", False),
             ("volteCellIntegrity", "Cell Integrity", thresholds["cell_integrity"], "LOW", True),
-            ("volteErlang", "Erlang", thresholds["erlang"], "HIGH"),
-            ("pdcchErrorRateVolte", "PDCCH Error Rate", thresholds["pdcch_error"], "HIGH"),
+            ("volteErlang", "Erlang", thresholds["erlang"], "HIGH", False),
+            ("pdcchErrorRateVolte", "PDCCH Error Rate", thresholds["pdcch_error"], "HIGH", False),
         ]
         
         for metric_key, metric_name, threshold, severity, invert in checks:
@@ -668,6 +775,9 @@ async def check_alerts(
                 
                 _in_memory_alerts[alert_id] = new_alert
                 new_alerts.append(new_alert)
+    
+    if new_alerts:
+        await send_webhook_notification(new_alerts)
     
     return {
         "success": True,
@@ -710,6 +820,70 @@ async def resolve_alert(
         return {"success": True, "message": f"Alert {alert_id} resolved"}
     
     raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+
+
+# ============================================================================
+# Realtime Endpoints
+# ============================================================================
+
+@app.get(
+    "/api/kpis/stream",
+    tags=["Realtime"],
+    summary="SSE stream of KPI data",
+    description="Server-Sent Events stream pushing KPI data at a fixed interval with keep-alive heartbeats"
+)
+async def stream_kpis(
+    request: Request,
+    hours: int = Query(
+        default=24,
+        ge=1,
+        le=168,
+        description="Time range in hours"
+    ),
+    interval: int = Query(
+        default=30,
+        ge=5,
+        le=300,
+        description="Push interval in seconds"
+    ),
+    _: bool = Depends(verify_token)
+):
+    """
+    Stream KPI data over Server-Sent Events.
+    
+    The client receives an `kpis` event on every interval with the full
+    KPI response payload, plus `heartbeat` comments to keep the connection
+    alive through proxies. The stream closes when the client disconnects.
+    """
+    async def event_generator():
+        while True:
+            if await request.is_disconnected():
+                logger.info("SSE client disconnected, closing stream")
+                break
+            try:
+                response = await get_kpis(
+                    hours=hours,
+                    cluster=None,
+                    station=None,
+                    cell=None,
+                    band=None,
+                )
+                payload = json.dumps(response.model_dump(mode="json"), default=str)
+                yield f"event: kpis\ndata: {payload}\n\n"
+            except Exception as exc:
+                logger.error(f"SSE snapshot failed: {exc}")
+                yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
+            await sleep(interval)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ============================================================================

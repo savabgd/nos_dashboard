@@ -17,6 +17,10 @@
             <span class="brand-text">CETIN</span>
         </div>
         <h1 class="top-bar-title">NOC Dashboard</h1>
+        <div class="top-bar-actions">
+            <span id="liveBadge" class="live-badge muted" title="Podaci se ažuriraju automatski">LIVE</span>
+            <button id="themeToggle" class="btn-theme" type="button" title="Promeni temu (svetla/tamna)">☾</button>
+        </div>
     </header>
 
     <main class="main-wrapper">
@@ -27,6 +31,7 @@
                 <option value="168">Last 7 Days</option>
             </select>
             <button id="refreshBtn" class="btn-refresh" type="button">Refresh</button>
+            <span id="lastUpdated" class="last-updated"></span>
         </div>
 
         <section class="kpi-grid" aria-label="KPI summary">
@@ -117,7 +122,11 @@
         <section class="table-section">
             <div class="table-header">
                 <h3>KPI Details by Cell</h3>
-                <button id="exportCsvBtn" class="btn-export" type="button">Export CSV</button>
+                <div class="table-tools">
+                    <input id="tableSearch" class="table-search" type="search" placeholder="Pretraži ćeliju / stanicu / klaster...">
+                    <button id="toggleBadBtn" class="btn-filter" type="button">Samo kritično</button>
+                    <button id="exportCsvBtn" class="btn-export" type="button">Export CSV</button>
+                </div>
             </div>
             <div class="table-wrapper">
                 <table id="kpiTable">
@@ -143,6 +152,8 @@
             </div>
         </section>
     </main>
+
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
     <script type="module" src="/app.ts"></script>
 </body>

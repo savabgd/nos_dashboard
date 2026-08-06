@@ -11,7 +11,7 @@
     "commit:auto:push": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1 -Push",
     "commit:auto:watch": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1 -Watch",
     "commit:auto:watch:push": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1 -Watch -Push",
-    "lint": "eslint app.ts --ext ts --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint app.ts network-map.ts stations.ts --ext ts --report-unused-disable-directives --max-warnings 0",
     "type-check": "tsc --noEmit",
     "test": "vitest",
     "test:ui": "vitest --ui",

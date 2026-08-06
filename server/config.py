@@ -47,11 +47,20 @@ class Settings(BaseSettings):
     SLA_PDCCH_ERROR: float = 3.0
     SLA_ERLANG_PER_SECTOR: float = 40.0
     
-    # Authentication (optional)
+# Authentication (optional)
     AUTH_ENABLED: bool = Field(default=False, env="AUTH_ENABLED")
     AUTH_SECRET: str = Field(default="change-me-in-production", env="AUTH_SECRET")
     AUTH_ALGORITHM: str = "HS256"
-    
+
+    # Alert Notifications
+    # When enabled, new alerts are pushed to an external webhook (e.g. Slack, OpsGenie).
+    NOTIFY_WEBHOOK_ENABLED: bool = Field(default=False, env="NOTIFY_WEBHOOK_ENABLED")
+    NOTIFY_WEBHOOK_URL: str = Field(default="", env="NOTIFY_WEBHOOK_URL")
+    NOTIFY_WEBHOOK_TIMEOUT: int = 5
+
+    # Monitoring / Metrics
+    METRICS_ENABLED: bool = Field(default=True, env="METRICS_ENABLED")
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

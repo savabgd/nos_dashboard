@@ -13,6 +13,33 @@
     --accent-red: #ef4444;
     --radius: 6px;
     --radius-sm: 4px;
+    --toast-bg: #323844;
+}
+
+/* LIGHT THEME */
+html[data-theme="light"] {
+    --bg-primary: #f4f6fa;
+    --bg-secondary: #ffffff;
+    --bg-card: #ffffff;
+    --bg-hover: #eef1f6;
+    --border-color: #d9dee8;
+    --text-primary: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --toast-bg: #1e293b;
+}
+
+html[data-theme="light"] .network-map-container,
+html[data-theme="light"] #networkMap,
+html[data-theme="light"] .leaflet-container {
+    background: #e2e8f0 !important;
+}
+
+html[data-theme="light"] .leaflet-popup-content-wrapper,
+html[data-theme="light"] .leaflet-popup-tip {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1;
 }
 
 *, *::before, *::after {
@@ -37,6 +64,60 @@ body {
     align-items: center;
     gap: 12px;
     min-height: 52px;
+}
+
+.top-bar-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-theme {
+    min-width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-theme:hover {
+    border-color: var(--accent-blue);
+    background: var(--bg-hover);
+}
+
+.live-badge {
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    transition: color 0.3s, border-color 0.3s;
+}
+
+.live-badge.live {
+    color: var(--accent-green);
+    border-color: rgba(16, 185, 129, 0.4);
+}
+
+.live-badge.bad {
+    color: var(--accent-red);
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.last-updated {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    white-space: nowrap;
 }
 
 .top-bar-brand {
@@ -453,6 +534,91 @@ body {
     border-bottom: 1px solid var(--border-color);
 }
 
+.table-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.table-search {
+    padding: 5px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    min-width: 220px;
+}
+
+.table-search:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+}
+
+.btn-filter {
+    padding: 5px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-filter:hover {
+    border-color: var(--accent-red);
+}
+
+.btn-filter.active {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+
+.toast-container {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 1000;
+}
+
+.toast {
+    background: var(--toast-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 0.8rem;
+    max-width: 320px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    animation: toast-in 0.25s ease-out;
+}
+
+.toast.error {
+    border-left-color: var(--accent-red);
+}
+
+.toast.success {
+    border-left-color: var(--accent-green);
+}
+
+.toast.hide {
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+@keyframes toast-in {
+    from { transform: translateY(8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
 .table-header h3 {
     font-size: 0.9rem;
     font-weight: 600;
@@ -574,7 +740,22 @@ tbody tr:hover {
 
     .time-select,
     .btn-refresh,
-    .btn-export {
+    .btn-export,
+    .btn-filter,
+    .table-search {
         width: 100%;
+    }
+
+    .table-tools {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .top-bar-title {
+        font-size: 0.9rem;
+    }
+
+    .last-updated {
+        display: none;
     }
 }

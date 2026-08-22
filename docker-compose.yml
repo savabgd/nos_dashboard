@@ -1,12 +1,15 @@
-version: '3.8'
-
 # VoLTE KPI Dashboard - Docker Compose Configuration
 # ===================================================
-# This file sets up the complete system with:
-# - ClickHouse database
-# - Python FastAPI backend
-# - Vite frontend (optional)
-# - Redis cache (optional)
+# Complete system: ClickHouse database, Python FastAPI backend,
+# Vite frontend (dev), Nginx reverse proxy (prod), Prometheus, Redis cache.
+#
+# Profiles:
+#   (none)  -> clickhouse + backend
+#   setup   -> schema init + demo data generator
+#   dev     -> Vite dev server
+#   prod    -> Nginx production frontend
+#   cache   -> Redis
+#   monitoring -> Prometheus
 
 services:
   # -----------------------------------------------------------------------------
@@ -74,6 +77,11 @@ services:
       - SLA_PDCCH_ERROR=3.0
       - SLA_ERLANG_PER_SECTOR=40.0
       - AUTH_ENABLED=false
+      # Redis cache — aktivno se koristi samo uz "cache" profil;
+      # ako Redis nije dostupan, backend automatski pada na in-memory keš.
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=your-redis-password
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -100,10 +108,13 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-    command: sh -c "npm install && npm run dev"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
     environment:
       - NODE_ENV=development
-      - VITE_API_BASE_URL=http://backend:8080
+      # VAZNO: ova vrednost se ugradjuje u browser-side kod — mora biti
+      # adresa vidljiva SA KORISNIKOG racunara, ne interno docker ime.
+      # Backend objavljuje port 8080 na hostu, zato localhost.
+      - VITE_API_BASE_URL=http://localhost:8080
       - VITE_AUTO_REFRESH_INTERVAL=300000
     depends_on:
       - backend

@@ -1,0 +1,53 @@
+# VoLTE KPI Dashboard - Docker build context exclusions
+# ======================================================
+# Sve sto NE treba da udje u "build context" (brzi build, manji image,
+# bez curenja tajni i lokalnih artefakata u image slojeve).
+
+# Git i CI
+.git
+.gitignore
+.github
+
+# Node / frontend artefakti
+node_modules
+dist
+coverage
+*.log
+
+# Python artefakti
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.pytest_cache/**
+
+# Tajne i lokalna konfiguracija (env var se prosledjuje kroz compose, ne kroz image)
+.env
+.env.*
+!.env.example
+
+# Docker fajlovi sami (nepotrebni u context-u)
+docker-compose.yml
+
+# Dokumentacija i pomocni fajlovi
+README.md
+SOLUTION.md
+AUTO_COMMIT.md
+CHANGELOG-auto.md
+Qwen_markdown_*.md
+demo_results.txt
+test_results.txt
+_preview.log
+styles.css.bak
+
+# C++ (nije deo web stack-a)
+*.cpp
+*.h
+main.cpp
+kpi_calc.*
+
+# Podesavanja editora/OS-a
+.vscode
+.idea
+.DS_Store
+Thumbs.db

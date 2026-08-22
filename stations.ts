@@ -121,6 +121,33 @@ export const NETWORK_STATIONS: MapStation[] = [
   { id: 'PZ_001', name: 'Prizren', cluster: 'JUG', region: 'prizrenski', lat: 42.2140, lon: 20.7410 }
 ];
 
+// ── Mrežni domeni (kao kod velikih operatera) ────────────────────────
+
+export type NetworkDomain = 'ran' | 'ims' | 'transport' | 'core';
+
+export interface DomainMeta {
+  id: NetworkDomain;
+  name: string;
+  shortName: string;
+  color: string;
+  description: string;
+}
+
+export const DOMAIN_META: Record<NetworkDomain, DomainMeta> = {
+  ran:       { id: 'ran',       name: 'RAN · Radio pristupna mreža', shortName: 'RAN',  color: '#0ea5e9', description: 'Bazne stanice, ćelije i pokrivenost' },
+  ims:       { id: 'ims',       name: 'IMS · VoLTE glas',            shortName: 'IMS',  color: '#10b981', description: 'QCI-1 nosioci glasa i integritet veze' },
+  transport: { id: 'transport', name: 'Transport · Backhaul',        shortName: 'TRAN', color: '#f59e0b', description: 'Fiber, mikrovalni i backbone linkovi' },
+  core:      { id: 'core',      name: 'Core · EPC jezgro',           shortName: 'CORE', color: '#a855f7', description: 'MME/SGW čvorišta i regionalni habovi' },
+};
+
+/** Stanice koje funkcionišu kao core / regionalni hab čvorišta. */
+export const CORE_HUB_STATIONS: ReadonlySet<string> = new Set(['BGD_CEN_001', 'NS_001', 'KG_001']);
+
+/** Primarni domen stanice — habovi idu u Core, sve ostalo je RAN. */
+export function stationDomain(stationId: string): NetworkDomain {
+  return CORE_HUB_STATIONS.has(stationId) ? 'core' : 'ran';
+}
+
 export const NETWORK_LINKS: MapLink[] = [
   // Core Beograd backbone
   { from: 'BGD_CEN_001', to: 'BGD_CEN_002', type: 'fiber', label: '10G' },

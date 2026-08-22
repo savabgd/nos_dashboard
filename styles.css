@@ -1194,3 +1194,486 @@ tbody tr:hover {
         display: none;
     }
 }
+
+/* ══════════════════════════════════════════════
+   APP SHELL — levi sidebar + glavni sadržaj
+   ══════════════════════════════════════════════ */
+
+.app-shell {
+    display: flex;
+    min-height: 100vh;
+}
+
+.main-area {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ── Sidebar ── */
+.sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    width: 232px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, var(--bg-secondary), var(--bg-primary));
+    border-right: 1px solid var(--border-color);
+    z-index: 1300;
+}
+
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nav-group-label {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 12px 10px 4px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.82rem;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.nav-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.nav-item.active {
+    background: rgba(14, 165, 233, 0.12);
+    border-left-color: var(--accent-blue);
+    color: var(--accent-blue);
+    font-weight: 600;
+}
+
+.nav-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.sidebar-footer {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.sidebar-version {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+}
+
+.sidebar-toggle {
+    display: none;
+    position: fixed;
+    bottom: 18px;
+    left: 18px;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 1.15rem;
+    cursor: pointer;
+    z-index: 1350;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+/* ══════════════════════════════════════════════
+   DOMAIN CARDS — pregled mrežnih domena
+   ══════════════════════════════════════════════ */
+
+.domain-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.domain-card {
+    position: relative;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 12px 14px 12px 20px;
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.domain-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    background: var(--dc, var(--accent-blue));
+}
+
+.domain-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--dc, var(--accent-blue));
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+}
+
+.domain-card.active {
+    border-color: var(--dc, var(--accent-blue));
+    background: color-mix(in srgb, var(--dc, #0ea5e9) 8%, var(--bg-card));
+}
+
+.domain-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.domain-name {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.domain-avail {
+    font-size: 1.3rem;
+    font-weight: 800;
+}
+
+.domain-desc {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.domain-meta-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+}
+
+/* ══════════════════════════════════════════════
+   DETAIL DRAWER — desni panel sa detaljima
+   ══════════════════════════════════════════════ */
+
+.drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+    z-index: 1390;
+}
+
+.drawer-backdrop.show {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.detail-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(420px, 94vw);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+    border-left: 1px solid var(--border-color);
+    box-shadow: -14px 0 34px rgba(0, 0, 0, 0.45);
+    transform: translateX(105%);
+    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+    z-index: 1400;
+}
+
+.detail-drawer.open {
+    transform: none;
+}
+
+.drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.drawer-heading h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.drawer-subtitle {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.drawer-close {
+    min-width: 30px;
+    height: 30px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.drawer-close:hover {
+    border-color: var(--accent-red);
+    color: var(--accent-red);
+}
+
+.drawer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 16px 24px;
+}
+
+.drawer-section {
+    margin-bottom: 18px;
+}
+
+.drawer-section-title {
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.metric-tile {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+}
+
+.metric-k {
+    display: block;
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.metric-v {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.meter-row {
+    margin-bottom: 10px;
+}
+
+.meter-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.meter {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-primary);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.meter i {
+    display: block;
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s ease;
+}
+
+.list-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 9px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.list-row:hover {
+    background: var(--bg-hover);
+}
+
+.status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-dot.good { background: var(--accent-green); }
+.status-dot.warning { background: var(--accent-yellow); }
+.status-dot.bad { background: var(--accent-red); }
+.status-dot.unknown { background: var(--text-muted); }
+
+.list-texts {
+    min-width: 0;
+    flex: 1;
+}
+
+.list-main {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.list-sub {
+    display: block;
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.list-value {
+    font-size: 0.72rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+tr[data-celija] {
+    cursor: pointer;
+}
+
+/* ── Responzivnost shell-a ── */
+@media (max-width: 1150px) {
+    .sidebar {
+        width: 62px;
+    }
+
+    .sidebar-brand {
+        justify-content: center;
+        padding: 14px 8px;
+    }
+
+    .sidebar-brand .brand-text,
+    .nav-group-label,
+    .nav-label {
+        display: none;
+    }
+
+    .nav-item {
+        justify-content: center;
+        padding: 10px 6px;
+        border-left-width: 3px;
+    }
+
+    .sidebar-footer {
+        text-align: center;
+        padding: 10px 6px;
+    }
+}
+
+@media (max-width: 900px) {
+    .domain-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 232px;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+    }
+
+    .app-shell.sidebar-open .sidebar {
+        transform: none;
+    }
+
+    .app-shell.sidebar-open .brand-text,
+    .app-shell.sidebar-open .nav-group-label,
+    .app-shell.sidebar-open .nav-label {
+        display: inline;
+    }
+
+    .sidebar-toggle {
+        display: flex;
+    }
+}
+
+@media (max-width: 560px) {
+    .domain-grid {
+        grid-template-columns: 1fr;
+    }
+}

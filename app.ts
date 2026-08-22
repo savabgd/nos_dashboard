@@ -7,7 +7,15 @@
  */
 
 import Chart from 'chart.js/auto';
-import { NETWORK_STATIONS } from './stations';
+import {
+  NETWORK_LINKS,
+  NETWORK_STATIONS,
+  DISTRICT_META,
+  DOMAIN_META,
+  CORE_HUB_STATIONS,
+  stationDomain,
+} from './stations';
+import type { NetworkDomain } from './stations';
 
 // ============================================================================
 // Types and Interfaces
@@ -97,6 +105,7 @@ let autoRefreshInterval: number | null = null;
 let prevMetrics: KpiMetrics | null = null;
 let sseSource: EventSource | null = null;
 let networkMapModule: typeof import('./network-map') | null = null;
+let activeDomainFilter: NetworkDomain | null = null;
 
 // ── NOC Monitoring State ──
 let soundEnabled = false;
@@ -280,6 +289,7 @@ let searchTimer: number | null = null;
 function filterCells(cells: KpiCell[], query: string, showBadOnly: boolean): KpiCell[] {
   const q = query.trim().toLowerCase();
   return cells.filter(cell => {
+    if (activeDomainFilter && stationDomain(cell.stanica) !== activeDomainFilter) return false;
     if (showBadOnly && getCellStatus(cell) !== 'BAD') return false;
     if (!q) return true;
     return cell.celija.toLowerCase().includes(q)
@@ -301,6 +311,7 @@ function updateTable(): void {
   getFilteredCells().forEach(cell => {
     const row = document.createElement('tr');
     row.dataset.station = cell.stanica;
+    row.dataset.celija = cell.celija;
     const status = getCellStatus(cell);
     const statusClass = status === 'GOOD' ? 'status-good' : status === 'WARNING' ? 'status-warning' : 'status-bad';
     const erlangWarn = cell.volteErlang > SLA.erlangPerSector;
@@ -602,6 +613,7 @@ function updateDashboard(): void {
   const curr = computeMetrics(kpiData);
   
   updateSummaryCards(curr);
+  renderDomainCards();
   updateTable();
   updateCharts();
   networkMapModule?.updateNetworkMap?.(kpiData);
@@ -786,6 +798,365 @@ function playAlarmSound(): void {
 }
 
 
+
+// ============================================================================
+// Mrežni domeni — RAN / IMS / Transport / Core
+// ============================================================================
+
+interface DomainStat {
+  id: NetworkDomain;
+  availability: number;
+  elements: number;
+  alarms: number;
+}
+
+function cellCompliant(c: KpiCell): boolean {
+  return c.volteDropRate <= SLA.dropRate &&
+    c.volteAccessFailureRate <= SLA.accessFailRate &&
+    c.volteCellIntegrity >= SLA.cellIntegrity;
+}
+
+function statusHex(st: string): string {
+  if (st === 'GOOD') return '#10b981';
+  if (st === 'WARNING') return '#f59e0b';
+  if (st === 'BAD') return '#ef4444';
+  return '#6b7280';
+}
+
+function computeDomainStats(): DomainStat[] {
+  const cells = kpiData.map(normalizeCell);
+  const linkStatuses = networkMapModule?.getLinkStatuses?.() ?? {};
+  const linkVals = Object.values(linkStatuses);
+  const pct = (ok: number, total: number) => total ? (ok / total) * 100 : 100;
+
+  const ranCells = cells.filter(c => !CORE_HUB_STATIONS.has(c.stanica));
+  const coreCells = cells.filter(c => CORE_HUB_STATIONS.has(c.stanica));
+  const imsOk = cells.filter(c => c.volteDropRate <= SLA.dropRate && c.volteCellIntegrity >= SLA.cellIntegrity).length;
+
+  return [
+    { id: 'ran', availability: pct(ranCells.filter(cellCompliant).length, ranCells.length), elements: ranCells.length, alarms: ranCells.filter(c => getCellStatus(c) === 'BAD').length },
+    { id: 'ims', availability: pct(imsOk, cells.length), elements: cells.length, alarms: cells.filter(c => getCellStatus(c) === 'BAD').length },
+    { id: 'transport', availability: pct(linkVals.filter(s => s === 'GOOD').length, linkVals.length), elements: linkVals.length || NETWORK_LINKS.length, alarms: linkVals.filter(s => s !== 'GOOD').length },
+    { id: 'core', availability: pct(coreCells.filter(cellCompliant).length, coreCells.length), elements: coreCells.length, alarms: coreCells.filter(c => getCellStatus(c) === 'BAD').length },
+  ];
+}
+
+function availClass(v: number): string {
+  if (!Number.isFinite(v)) return 'kpi-warning';
+  if (v >= 95) return 'kpi-good';
+  if (v >= 85) return 'kpi-warning';
+  return 'kpi-bad';
+}
+
+function renderDomainCards(): void {
+  const grid = document.getElementById('domainGrid');
+  if (!grid) return;
+  grid.replaceChildren();
+
+  computeDomainStats().forEach(stat => {
+    const meta = DOMAIN_META[stat.id];
+    const card = document.createElement('article');
+    card.className = 'domain-card' + (activeDomainFilter === stat.id ? ' active' : '');
+    card.style.setProperty('--dc', meta.color);
+    card.dataset.domain = stat.id;
+
+    const availText = stat.elements ? `${stat.availability.toFixed(1)}%` : '—';
+    card.innerHTML = `
+      <div class="domain-head">
+        <span class="domain-name">${meta.shortName}</span>
+        <span class="domain-avail ${availClass(stat.availability)}">${availText}</span>
+      </div>
+      <div class="domain-desc">${meta.description}</div>
+      <div class="domain-meta-row">
+        <span>${stat.elements} elem.</span>
+        <span class="${stat.alarms ? 'kpi-bad' : ''}">${stat.alarms} alarma</span>
+      </div>`;
+
+    card.addEventListener('click', () => toggleDomainFilter(stat.id));
+    grid.appendChild(card);
+  });
+}
+
+function syncDomainNav(): void {
+  document.querySelectorAll<HTMLButtonElement>('.nav-item').forEach(btn => {
+    const nav = btn.dataset.nav ?? '';
+    const isActive = nav === 'overview'
+      ? activeDomainFilter === null
+      : nav === `domain-${activeDomainFilter}`;
+    btn.classList.toggle('active', isActive);
+  });
+}
+
+function toggleDomainFilter(d: NetworkDomain): void {
+  activeDomainFilter = activeDomainFilter === d ? null : d;
+  syncDomainNav();
+  renderDomainCards();
+  updateTable();
+  if (activeDomainFilter) openDomainDrawer(activeDomainFilter);
+}
+
+// ============================================================================
+// DETAIL DRAWER — desni panel sa detaljima (ćelija / stanica / region / domen)
+// ============================================================================
+
+const drawerEl = (): HTMLElement | null => document.getElementById('detailDrawer');
+const drawerBodyEl = (): HTMLElement | null => document.getElementById('drawerBody');
+
+/** Escapuje tekst pre ubacivanja u HTML (zaštita od XSS iz podataka). */
+function esc(v: unknown): string {
+  return String(v ?? '').replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] as string)
+  );
+}
+
+function openDrawer(title: string, subtitleHtml: string, accent?: string): void {
+  const d = drawerEl();
+  if (!d) return;
+  d.classList.add('open');
+  d.setAttribute('aria-hidden', 'false');
+  document.getElementById('drawerBackdrop')?.classList.add('show');
+  const t = document.getElementById('drawerTitle');
+  if (t) { t.textContent = title; t.style.color = accent ?? ''; }
+  const s = document.getElementById('drawerSubtitle');
+  if (s) s.innerHTML = subtitleHtml;
+  drawerBodyEl()?.scrollTo({ top: 0 });
+}
+
+function closeDrawer(): void {
+  drawerEl()?.classList.remove('open');
+  drawerEl()?.setAttribute('aria-hidden', 'true');
+  document.getElementById('drawerBackdrop')?.classList.remove('show');
+}
+
+function metricTile(k: string, v: string, cls = ''): string {
+  return `<div class="metric-tile"><span class="metric-k">${esc(k)}</span><span class="metric-v ${cls}">${v}</span></div>`;
+}
+
+function meterRow(label: string, value: number, slaValue: number, higherIsBetter: boolean): string {
+  const cls = getKpiClass(value, slaValue, higherIsBetter ? slaValue - 2 : slaValue * 2, higherIsBetter) ?? '';
+  const span = higherIsBetter ? Math.max(slaValue, 100.01) : slaValue * 2;
+  const width = Math.max(2, Math.min(100, (value / span) * 100));
+  return `
+    <div class="meter-row">
+      <div class="meter-label"><span>${esc(label)}</span><span class="${cls}">${value.toFixed(2)}%</span></div>
+      <div class="meter"><i style="width:${width.toFixed(1)}%;background:${statusHex(cls.replace('kpi-', '').toUpperCase())}"></i></div>
+    </div>`;
+}
+
+function listRow(dataAttr: string, key: string, main: string, sub: string, value: string, st: string): string {
+  return `
+    <div class="list-row" ${dataAttr}>
+      <span class="status-dot ${st.toLowerCase()}"></span>
+      <span class="list-texts"><span class="list-main">${main}</span><span class="list-sub">${sub}</span></span>
+      <span class="list-value ${st === 'BAD' ? 'kpi-bad' : st === 'WARNING' ? 'kpi-warning' : ''}">${value}</span>
+      ${key}
+    </div>`;
+}
+
+function openCellDrawer(cell: KpiCell): void {
+  const body = drawerBodyEl();
+  if (!body) return;
+  const st = getCellStatus(cell);
+  const badgeCls = st === 'GOOD' ? 'status-good' : st === 'WARNING' ? 'status-warning' : 'status-bad';
+
+  body.innerHTML = `
+    <div class="drawer-section">
+      <span class="status-badge ${badgeCls}" style="font-size:.8rem;padding:4px 12px;">${st}</span>
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">Ključni KPI vs SLA</div>
+      ${meterRow('Drop Rate', cell.volteDropRate, SLA.dropRate, false)}
+      ${meterRow('Access Fail Rate', cell.volteAccessFailureRate, SLA.accessFailRate, false)}
+      ${meterRow('Cell Integrity', cell.volteCellIntegrity, SLA.cellIntegrity, true)}
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">Svi pokazatelji</div>
+      <div class="metric-grid">
+        ${metricTile('Erlang', cell.volteErlang.toFixed(1), cell.volteErlang > SLA.erlangPerSector ? 'kpi-warning' : '')}
+        ${metricTile('Succ Calls', String(cell.volteSuccCalls))}
+        ${metricTile('Mobility SR', `${cell.volteMobilitySR.toFixed(2)}%`, getKpiClass(cell.volteMobilitySR, 97, 95, true) ?? '')}
+        ${metricTile('PDCCH Error', `${cell.pdcchErrorRateVolte.toFixed(2)}%`, getKpiClass(cell.pdcchErrorRateVolte, SLA.pdcchError, SLA.pdcchError * 2) ?? '')}
+        ${metricTile('Drops Count', String(cell.volteDropsCount), cell.volteDropsCount > 20 ? 'kpi-bad' : '')}
+        ${metricTile('Domen', DOMAIN_META[stationDomain(cell.stanica)].shortName)}
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">Lokacija</div>
+      <div class="metric-grid">
+        ${metricTile('Stanica', esc(cell.stanica))}
+        ${metricTile('Klaster', esc(cell.klaster))}
+      </div>
+    </div>`;
+
+  openDrawer(cell.celija, `${esc(cell.klaster)} &middot; ${esc(cell.stanica)} &middot; ${esc(cell.band)} MHz`);
+}
+
+function worstCellStatus(cells: KpiCell[]): string {
+  let worst = 'UNKNOWN';
+  for (const c of cells) {
+    const s = getCellStatus(c);
+    if (s === 'BAD') return 'BAD';
+    if (s === 'WARNING') worst = 'WARNING';
+    else if (s === 'GOOD' && worst === 'UNKNOWN') worst = 'GOOD';
+  }
+  return worst;
+}
+
+function openStationDrawer(stationId: string): void {
+  const station = NETWORK_STATIONS.find(s => s.id === stationId);
+  const body = drawerBodyEl();
+  if (!station || !body) return;
+
+  const cells = kpiData.map(normalizeCell).filter(c => c.stanica === stationId);
+  const worst = worstCellStatus(cells);
+  const avgDrop = cells.length ? cells.reduce((a, c) => a + c.volteDropRate, 0) / cells.length : 0;
+  const avgIntegrity = cells.length ? cells.reduce((a, c) => a + c.volteCellIntegrity, 0) / cells.length : 0;
+  const domain = DOMAIN_META[stationDomain(stationId)];
+
+  const rows = cells.map(c => listRow(
+    `data-cell="${esc(c.celija)}"`, '',
+    esc(c.celija), `Band ${esc(c.band)} MHz`,
+    `${c.volteDropRate.toFixed(2)}%`,
+    getCellStatus(c)
+  )).join('');
+
+  body.innerHTML = `
+    <div class="drawer-section">
+      <span class="status-badge ${worst === 'GOOD' ? 'status-good' : worst === 'WARNING' ? 'status-warning' : worst === 'BAD' ? 'status-bad' : ''}" style="font-size:.8rem;padding:4px 12px;">${worst}</span>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">Stanica</div>
+      <div class="metric-grid">
+        ${metricTile('Koordinata', `${station.lat.toFixed(3)}, ${station.lon.toFixed(3)}`)}
+        ${metricTile('Klaster', esc(station.cluster))}
+        ${metricTile('Ćelija', String(cells.length))}
+        ${metricTile('Domen', domain.shortName)}
+      </div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">Prosečni KPI</div>
+      <div class="metric-grid">
+        ${metricTile('Drop Rate', `${avgDrop.toFixed(2)}%`, getKpiClass(avgDrop, SLA.dropRate, SLA.dropRate * 2) ?? '')}
+        ${metricTile('Cell Integrity', `${avgIntegrity.toFixed(2)}%`, getKpiClass(avgIntegrity, SLA.cellIntegrity, SLA.cellIntegrity - 2, true) ?? '')}
+      </div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">Ćelije (${cells.length})</div>
+      ${rows || '<div class="alarm-empty">Nema podataka za ovu stanicu</div>'}
+    </div>`;
+
+  openDrawer(station.name, `${esc(station.id)} &middot; ${esc(station.cluster)} &middot; okrug ${esc(DISTRICT_META[station.region]?.name ?? station.region)}`, domain.color);
+}
+
+function openRegionDrawer(regionId: string): void {
+  const body = drawerBodyEl();
+  if (!body) return;
+  const meta = DISTRICT_META[regionId];
+  const stations = NETWORK_STATIONS.filter(s => s.region === regionId);
+  const ids = new Set(stations.map(s => s.id));
+  const cells = kpiData.map(normalizeCell).filter(c => ids.has(c.stanica));
+  const compliant = cells.filter(cellCompliant).length;
+  const availability = cells.length ? (compliant / cells.length) * 100 : 100;
+
+  const rows = stations.map(st => {
+    const scells = kpiData.filter(c => c.stanica === st.id);
+    const w = worstCellStatus(scells);
+    return listRow(
+      `data-station-drawer="${esc(st.id)}"`, '',
+      esc(st.name), `${esc(st.cluster)} · ${scells.length} ěelija`,
+      scells.length ? `${scells.filter(cellCompliant).length}/${scells.length}` : '—',
+      w
+    );
+  }).join('');
+
+  body.innerHTML = `
+    <div class="drawer-section">
+      <div class="metric-grid">
+        ${metricTile('Dostupnost', cells.length ? `${availability.toFixed(1)}%` : '—', availClass(availability))}
+        ${metricTile('Stanica', String(stations.length))}
+        ${metricTile('Ćelija', String(cells.length))}
+        ${metricTile('Alarms', String(cells.filter(c => getCellStatus(c) === 'BAD').length), cells.some(c => getCellStatus(c) === 'BAD') ? 'kpi-bad' : '')}
+      </div>
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">Bazne stanice u okrugu (${stations.length})</div>
+      ${rows || '<div class="alarm-empty">Nema stanica u ovom okrugu</div>'}
+    </div>`;
+
+  openDrawer(meta?.name ?? regionId, `${esc(meta?.centerCity ?? '')} &middot; ${esc(meta?.macroRegion ?? '')}`, '#38bdf8');
+}
+
+function openDomainDrawer(domainId: NetworkDomain): void {
+  const body = drawerBodyEl();
+  if (!body) return;
+  const meta = DOMAIN_META[domainId];
+  const stat = computeDomainStats().find(s => s.id === domainId);
+
+  let detailSection = '';
+  if (domainId === 'transport') {
+    const statuses = networkMapModule?.getLinkStatuses?.() ?? {};
+    const rows = NETWORK_LINKS.map(l => {
+      const from = NETWORK_STATIONS.find(s => s.id === l.from);
+      const to = NETWORK_STATIONS.find(s => s.id === l.to);
+      const st = statuses[`${l.from}->${l.to}`] ?? 'UNKNOWN';
+      return listRow('', '', `${esc(from?.name ?? l.from)} &harr; ${esc(to?.name ?? l.to)}`,
+        `${esc(l.type.toUpperCase())}${l.label ? ' · ' + esc(l.label) : ''}`,
+        st === 'UNKNOWN' ? '—' : st, st);
+    }).join('');
+    detailSection = `<div class="drawer-section"><div class="drawer-section-title">Linkovi (${NETWORK_LINKS.length})</div>${rows}</div>`;
+  } else {
+    const inDomain = kpiData.map(normalizeCell).filter(c =>
+      domainId === 'core' ? CORE_HUB_STATIONS.has(c.stanica) : true
+    );
+    const worst = [...inDomain].sort((a, b) => b.volteDropRate - a.volteDropRate).slice(0, 6);
+    const rows = worst.map(c => listRow(
+      `data-cell="${esc(c.celija)}"`, '',
+      esc(c.celija), `${esc(c.stanica)} · ${esc(c.klaster)}`,
+      `${c.volteDropRate.toFixed(2)}%`,
+      getCellStatus(c)
+    )).join('');
+    detailSection = `<div class="drawer-section"><div class="drawer-section-title">Najgoré ćelije po drop rate-u</div>${rows}</div>`;
+  }
+
+  body.innerHTML = `
+    <div class="drawer-section">
+      <div class="metric-grid">
+        ${metricTile('Dostupnost', stat && stat.elements ? `${stat.availability.toFixed(1)}%` : '—', availClass(stat?.availability ?? NaN))}
+        ${metricTile('Elementa', String(stat?.elements ?? 0))}
+        ${metricTile('Alarmi', String(stat?.alarms ?? 0), stat?.alarms ? 'kpi-bad' : '')}
+      </div>
+    </div>
+    ${detailSection}`;
+
+  openDrawer(meta.name, esc(meta.description), meta.color);
+}
+
+function handleNavAction(action: string): void {
+  if (action === 'overview') {
+    activeDomainFilter = null;
+    syncDomainNav();
+    renderDomainCards();
+    updateTable();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else if (action === 'map') {
+    document.getElementById('mapSection')?.scrollIntoView({ behavior: 'smooth' });
+  } else if (action === 'alarms') {
+    showOnlyCritical = true;
+    document.getElementById('toggleBadBtn')?.classList.add('active');
+    updateTable();
+    document.querySelector('.noc-panel')?.scrollIntoView({ behavior: 'smooth' });
+  } else if (action === 'sla') {
+    document.querySelector('.noc-sla')?.scrollIntoView({ behavior: 'smooth' });
+  } else if (action.startsWith('domain-')) {
+    toggleDomainFilter(action.slice(7) as NetworkDomain);
+    document.getElementById('domainGrid')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  // Na mobilnom zatvori sidebar nakon izbora
+  document.getElementById('appShell')?.classList.remove('sidebar-open');
+}
 
 /**
  * Update summary cards with current metrics
@@ -1098,6 +1469,46 @@ function setupEventListeners(): void {
       showToast(soundEnabled ? 'Alarm sound enabled' : 'Alarm sound muted', 'success', 1200);
     });
   }
+
+  // ── Sidebar navigacija ──
+  document.querySelectorAll<HTMLButtonElement>('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => handleNavAction(btn.dataset.nav ?? ''));
+  });
+  document.getElementById('sidebarToggle')?.addEventListener('click', () => {
+    document.getElementById('appShell')?.classList.toggle('sidebar-open');
+  });
+
+  // ── Detail drawer ──
+  document.getElementById('drawerClose')?.addEventListener('click', closeDrawer);
+  document.getElementById('drawerBackdrop')?.addEventListener('click', closeDrawer);
+  drawerBodyEl()?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    const cellEl = target.closest<HTMLElement>('[data-cell]');
+    if (cellEl?.dataset.cell) {
+      const cell = kpiData.find(c => c.celija === cellEl.dataset.cell);
+      if (cell) { openCellDrawer(normalizeCell(cell)); return; }
+    }
+    const stationEl = target.closest<HTMLElement>('[data-station-drawer]');
+    if (stationEl?.dataset.stationDrawer) openStationDrawer(stationEl.dataset.stationDrawer);
+  });
+
+  // Klik na red tablice → drawer sa detaljima te ćelije
+  document.getElementById('tableBody')?.addEventListener('click', (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLTableRowElement>('tr[data-celija]');
+    if (!row?.dataset.celija) return;
+    const cell = kpiData.find(c => c.celija === row.dataset.celija);
+    if (cell) openCellDrawer(normalizeCell(cell));
+  });
+
+  // Eventi iz mape (network-map modul) → otvaranje drawera
+  window.addEventListener('noc:station-click', (e) => {
+    const detail = (e as CustomEvent<{ stationId?: string }>).detail;
+    if (detail?.stationId) openStationDrawer(detail.stationId);
+  });
+  window.addEventListener('noc:region-click', (e) => {
+    const detail = (e as CustomEvent<{ regionId?: string }>).detail;
+    if (detail?.regionId) openRegionDrawer(detail.regionId);
+  });
   
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -1108,6 +1519,10 @@ function setupEventListeners(): void {
     if (e.key === 'e' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       exportCSV();
+    }
+    if (e.key === 'Escape') {
+      closeDrawer();
+      document.getElementById('appShell')?.classList.remove('sidebar-open');
     }
   });
 }

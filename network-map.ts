@@ -26,6 +26,7 @@ let stationMarkers: Record<string, L.CircleMarker> = {};
 let linkPolylines: L.Polyline[] = [];
 let selectedRegionId: string | null = null;
 let lastStatuses: Record<string, StationStatus> = {};
+const linkStatusIndex: Record<string, StationStatus> = {};
 
 const GEOJSON_URL = '/serbia-districts.geojson';
 
@@ -84,6 +85,11 @@ export function stationById(id: string): MapStation | undefined {
   return NETWORK_STATIONS.find(s => s.id === id);
 }
 
+/** Status po linku — ključ "from->to". Koristi ga Transport domen na dashboardu. */
+export function getLinkStatuses(): Record<string, StationStatus> {
+  return { ...linkStatusIndex };
+}
+
 export function initNetworkMap(containerId: string): void {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -112,6 +118,12 @@ export function initNetworkMap(containerId: string): void {
     maxZoom: 19,
     errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
   }).addTo(map);
+
+  // Klik na prazan prostor mape (van svih okruga) resetuje selekciju
+  // i vraća prikaz cele Srbije.
+  map.on('click', () => {
+    if (selectedRegionId) clearRegionSelection();
+  });
 
   // Render real district (okrug) boundaries from GeoJSON, then overlay links & stations.
   void loadDistrictBoundaries();
@@ -154,7 +166,7 @@ async function loadDistrictBoundaries(): Promise<void> {
         bindDistrictTooltip(layer, props);
 
         layer.on('mouseover', () => {
-          if (selectedRegionId) return;
+          if (selectedRegionId === props.regionId) return;
           (layer as L.Path).setStyle({
             fillOpacity: 0.45,
             weight: 3.5,
@@ -167,11 +179,14 @@ async function loadDistrictBoundaries(): Promise<void> {
           applyDistrictStyles();
         });
 
-        layer.on('click', () => {
+        layer.on('click', (e) => {
+          // Spreči da klik na region "prođe" do mape (map click = izlaz iz selekcije)
+          L.DomEvent.stopPropagation(e);
           if (selectedRegionId === props.regionId) {
             clearRegionSelection();
           } else {
             selectRegion(props.regionId, true);
+            window.dispatchEvent(new CustomEvent('noc:region-click', { detail: { regionId: props.regionId } }));
           }
         });
       }
@@ -235,10 +250,10 @@ function applyDistrictStyles(): void {
         } else if (isDimmed) {
           path.setStyle({
             color: '#38bdf8',
-            weight: 0,
-            opacity: 0,
+            weight: 1,
+            opacity: 0.25,
             fillColor: props.fill,
-            fillOpacity: 0
+            fillOpacity: 0.06
           });
     } else {
       path.setStyle({
@@ -313,6 +328,7 @@ function renderLinks(stationStatuses: Record<string, StationStatus>): void {
   // Clear existing polylines
   linkPolylines.forEach(l => map?.removeLayer(l));
   linkPolylines = [];
+  for (const k of Object.keys(linkStatusIndex)) delete linkStatusIndex[k];
 
   const inRegion = (station: MapStation): boolean =>
     !selectedRegionId || station.region === selectedRegionId;
@@ -329,6 +345,7 @@ function renderLinks(stationStatuses: Record<string, StationStatus>): void {
     );
 
     const color = linkStroke(link, status);
+    linkStatusIndex[`${link.from}->${link.to}`] = status;
     const polyline = L.polyline([[from.lat, from.lon], [to.lat, to.lon]], {
       color,
       weight: link.type === 'backhaul' ? 3 : 2,
@@ -361,7 +378,9 @@ function renderStations(stationStatuses: Record<string, StationStatus>): void {
       fillOpacity: 0.95
     }).addTo(map!);
 
-    marker.on('click', () => {
+    marker.on('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      window.dispatchEvent(new CustomEvent('noc:station-click', { detail: { stationId: station.id } }));
       if (selectedRegionId !== station.region) {
         selectRegion(station.region, true);
       }

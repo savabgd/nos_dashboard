@@ -11,7 +11,38 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <header class="top-bar">
+  <div class="app-shell" id="appShell">
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-icon">C</span>
+        <span class="brand-text">NOC</span>
+      </div>
+      <nav class="sidebar-nav">
+        <span class="nav-group-label">Pregled</span>
+        <button class="nav-item active" data-nav="overview" type="button"><span class="nav-label">Dashboard</span></button>
+
+        <span class="nav-group-label">Domeni</span>
+        <button class="nav-item nav-domain" data-nav="domain-ran" type="button"><span class="nav-dot" style="background:#0ea5e9"></span><span class="nav-label">RAN · Radio</span></button>
+        <button class="nav-item nav-domain" data-nav="domain-ims" type="button"><span class="nav-dot" style="background:#10b981"></span><span class="nav-label">IMS · VoLTE</span></button>
+        <button class="nav-item nav-domain" data-nav="domain-transport" type="button"><span class="nav-dot" style="background:#f59e0b"></span><span class="nav-label">Transport</span></button>
+        <button class="nav-item nav-domain" data-nav="domain-core" type="button"><span class="nav-dot" style="background:#a855f7"></span><span class="nav-label">Core EPC</span></button>
+
+        <span class="nav-group-label">Alati</span>
+        <button class="nav-item" data-nav="map" type="button"><span class="nav-label">Mapa mreže</span></button>
+        <button class="nav-item" data-nav="alarms" type="button"><span class="nav-label">Alarmi</span></button>
+        <button class="nav-item" data-nav="sla" type="button"><span class="nav-label">SLA izveštaj</span></button>
+      </nav>
+      <div class="sidebar-footer">
+        <span class="sidebar-version">VoLTE KPI v1.1</span>
+      </div>
+    </aside>
+
+    <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Otvori navigaciju">&#9776;</button>
+
+    <div class="main-area">
+
+  <header class="top-bar">
         <div class="top-bar-brand">
             <span class="brand-icon">C</span>
             <span class="brand-text">CETIN</span>
@@ -33,6 +64,8 @@
             <button id="refreshBtn" class="btn-refresh" type="button">Refresh</button>
             <span id="lastUpdated" class="last-updated"></span>
         </div>
+
+        <section class="domain-grid" id="domainGrid" aria-label="Mrežni domeni"></section>
 
         <section class="kpi-grid" aria-label="KPI summary">
             <article class="kpi-card">
@@ -127,7 +160,7 @@
             </div>
         </section>
 
-        <section class="map-section" aria-label="Mrežna mapa">
+        <section class="map-section" id="mapSection" aria-label="Mrežna mapa">
             <div class="map-header">
                 <div>
                     <h3>Mrežna mapa Srbije</h3>
@@ -202,8 +235,23 @@
             </div>
         </section>
     </main>
+    </div><!-- /main-area -->
+  </div><!-- /app-shell -->
 
-    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+  <!-- Detail drawer (desni panel sa detaljima) -->
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+  <aside class="detail-drawer" id="detailDrawer" aria-hidden="true">
+    <header class="drawer-header">
+      <div class="drawer-heading">
+        <h3 id="drawerTitle">—</h3>
+        <span class="drawer-subtitle" id="drawerSubtitle"></span>
+      </div>
+      <button class="drawer-close" id="drawerClose" type="button" aria-label="Zatvori">&times;</button>
+    </header>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
     <script type="module" src="/app.ts"></script>
 </body>

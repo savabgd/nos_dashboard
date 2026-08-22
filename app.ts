@@ -98,6 +98,14 @@ let prevMetrics: KpiMetrics | null = null;
 let sseSource: EventSource | null = null;
 let networkMapModule: typeof import('./network-map') | null = null;
 
+// ── NOC Monitoring State ──
+let soundEnabled = false;
+const nocStartTime = Date.now();
+interface Alarm { id: string; severity: 'critical' | 'major'; text: string; time: Date; }
+interface Incident { id: string; title: string; status: 'active' | 'investigating' | 'resolved'; time: Date; meta: string; }
+let activeAlarms: Alarm[] = [];
+let recentIncidents: Incident[] = [];
+
 // ============================================================================
 // Utility Functions
 // ============================================================================
@@ -597,7 +605,187 @@ function updateDashboard(): void {
   updateTable();
   updateCharts();
   networkMapModule?.updateNetworkMap?.(kpiData);
+  updateNocPanel(curr);
 }
+
+// ============================================================================
+// NOC Monitoring Panel
+// ============================================================================
+
+function updateNocPanel(curr: KpiMetrics | null): void {
+  if (!curr) return;
+  updateHealthRing(curr);
+  updateSlaBar(curr);
+  updateAlarms();
+  updateIncidents();
+  updateUptime();
+}
+
+function updateHealthRing(curr: KpiMetrics): void {
+  const dropScore = Math.max(0, 100 - (curr.dropRate / SLA.dropRate) * 50);
+  const accessScore = Math.max(0, 100 - (curr.accessFailRate / SLA.accessFailRate) * 50);
+  const integrityScore = Math.min(100, (curr.cellIntegrity / 100) * 100);
+  const score = Math.round((dropScore * 0.3 + accessScore * 0.3 + integrityScore * 0.4));
+
+  const scoreEl = document.getElementById('healthScore');
+  const arcEl = document.getElementById('healthArc') as SVGCircleElement | null;
+  if (scoreEl) scoreEl.textContent = String(score);
+
+  if (arcEl) {
+    const circumference = 2 * Math.PI * 42;
+    const offset = circumference - (score / 100) * circumference;
+    arcEl.style.strokeDashoffset = String(offset);
+    arcEl.classList.remove('warning', 'bad');
+    if (score < 70) arcEl.classList.add('bad');
+    else if (score < 90) arcEl.classList.add('warning');
+  }
+}
+
+function updateSlaBar(_curr: KpiMetrics): void {
+  const compliant = kpiData.filter(c =>
+    c.volteDropRate <= SLA.dropRate &&
+    c.volteAccessFailureRate <= SLA.accessFailRate &&
+    c.volteCellIntegrity >= SLA.cellIntegrity
+  ).length;
+  const pct = kpiData.length ? (compliant / kpiData.length) * 100 : 0;
+
+  const valEl = document.getElementById('slaValue');
+  const barEl = document.getElementById('slaBar');
+  if (valEl) {
+    valEl.textContent = pct.toFixed(1) + '%';
+    valEl.classList.remove('warning', 'bad');
+    if (pct < 95) valEl.classList.add('bad');
+    else if (pct < 99.5) valEl.classList.add('warning');
+  }
+  if (barEl) {
+    barEl.style.width = pct.toFixed(1) + '%';
+    barEl.classList.remove('warning', 'bad');
+    if (pct < 95) barEl.classList.add('bad');
+    else if (pct < 99.5) barEl.classList.add('warning');
+  }
+}
+
+function updateAlarms(): void {
+  const prevAlarmCount = activeAlarms.length;
+  activeAlarms = [];
+
+  kpiData.forEach(c => {
+    if (c.volteDropRate > SLA.dropRate * 2) {
+      activeAlarms.push({
+        id: `drop-${c.celija}`, severity: 'critical',
+        text: `${c.celija} — Drop ${c.volteDropRate.toFixed(1)}%`, time: new Date()
+      });
+    } else if (c.volteAccessFailureRate > SLA.accessFailRate * 2) {
+      activeAlarms.push({
+        id: `af-${c.celija}`, severity: 'critical',
+        text: `${c.celija} — AF ${c.volteAccessFailureRate.toFixed(1)}%`, time: new Date()
+      });
+    } else if (c.volteCellIntegrity < 95) {
+      activeAlarms.push({
+        id: `int-${c.celija}`, severity: 'major',
+        text: `${c.celija} — Integrity ${c.volteCellIntegrity.toFixed(1)}%`, time: new Date()
+      });
+    }
+  });
+
+  if (soundEnabled && activeAlarms.length > prevAlarmCount) playAlarmSound();
+
+  const listEl = document.getElementById('alarmsList');
+  if (!listEl) return;
+  if (activeAlarms.length === 0) {
+    listEl.innerHTML = '<div class="alarm-empty">No active alarms</div>';
+    return;
+  }
+  listEl.innerHTML = activeAlarms.slice(0, 8).map(a => `
+    <div class="alarm-item ${a.severity === 'major' ? 'warning' : ''}">
+      <span class="alarm-severity ${a.severity}">${a.severity}</span>
+      <span class="alarm-text">${a.text}</span>
+      <span class="alarm-time">${a.time.toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })}</span>
+    </div>
+  `).join('');
+}
+
+function updateIncidents(): void {
+  const now = new Date();
+  const criticalAlarms = activeAlarms.filter(a => a.severity === 'critical');
+  recentIncidents = [];
+
+  if (criticalAlarms.length > 0) {
+    recentIncidents.push({
+      id: 'inc-critical', title: `${criticalAlarms.length} critical alarm(s) active`,
+      status: 'active', time: now,
+      meta: `Cells: ${criticalAlarms.map(a => a.text.split(' — ')[0]).join(', ')}`
+    });
+  }
+  const majorAlarms = activeAlarms.filter(a => a.severity === 'major');
+  if (majorAlarms.length > 0) {
+    recentIncidents.push({
+      id: 'inc-major', title: `${majorAlarms.length} cell(s) below integrity SLA`,
+      status: 'investigating', time: now, meta: 'Auto-detected by KPI monitoring'
+    });
+  }
+  if (activeAlarms.length === 0) {
+    recentIncidents.push({
+      id: 'inc-ok', title: 'All systems nominal',
+      status: 'resolved', time: now, meta: 'No active incidents'
+    });
+  }
+
+  const countEl = document.getElementById('incidentCount');
+  if (countEl) {
+    countEl.textContent = String(recentIncidents.length);
+    countEl.classList.toggle('has-incidents', activeAlarms.length > 0);
+  }
+
+  const timelineEl = document.getElementById('incidentsTimeline');
+  if (!timelineEl) return;
+  timelineEl.innerHTML = recentIncidents.map((inc, i) => `
+    <div class="incident-item">
+      <div class="incident-dot-col">
+        <span class="incident-dot ${inc.status}"></span>
+        ${i < recentIncidents.length - 1 ? '<span class="incident-line"></span>' : ''}
+      </div>
+      <div class="incident-info">
+        <span class="incident-title">${inc.title}</span>
+        <span class="incident-meta">${inc.time.toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })} · ${inc.meta}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateUptime(): void {
+  const elapsed = Date.now() - nocStartTime;
+  const hours = Math.floor(elapsed / 3600000);
+  const mins = Math.floor((elapsed % 3600000) / 60000);
+  const secs = Math.floor((elapsed % 60000) / 1000);
+
+  const textEl = document.getElementById('uptimeText');
+  const dotEl = document.getElementById('uptimeDot');
+  if (textEl) textEl.textContent = `Uptime: ${hours}h ${mins}m ${secs}s`;
+  if (dotEl) {
+    dotEl.classList.remove('warning', 'bad');
+    if (activeAlarms.some(a => a.severity === 'critical')) dotEl.classList.add('bad');
+    else if (activeAlarms.length > 0) dotEl.classList.add('warning');
+  }
+}
+
+function playAlarmSound(): void {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'square';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.15;
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.stop(ctx.currentTime + 0.4);
+  } catch { /* AudioContext not available */ }
+}
+
+
 
 /**
  * Update summary cards with current metrics
@@ -899,6 +1087,17 @@ function setupEventListeners(): void {
   if (exportCsvBtn) {
     exportCsvBtn.addEventListener('click', exportCSV);
   }
+
+  // Sound toggle for alarm notifications
+  const soundToggleBtn = document.getElementById('soundToggle');
+  if (soundToggleBtn) {
+    soundToggleBtn.addEventListener('click', () => {
+      soundEnabled = !soundEnabled;
+      soundToggleBtn.textContent = soundEnabled ? '🔊' : '🔇';
+      soundToggleBtn.classList.toggle('active', soundEnabled);
+      showToast(soundEnabled ? 'Alarm sound enabled' : 'Alarm sound muted', 'success', 1200);
+    });
+  }
   
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -927,6 +1126,9 @@ document.addEventListener('DOMContentLoaded', () => {
   loadData();
   startAutoRefresh();
   void loadNetworkMap();
+
+  // Update uptime counter every second
+  setInterval(updateUptime, 1000);
 });
 
 // Cleanup on page unload

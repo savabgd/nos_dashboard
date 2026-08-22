@@ -24,6 +24,8 @@ let map: L.Map | null = null;
 let districtLayer: L.GeoJSON | null = null;
 let stationMarkers: Record<string, L.CircleMarker> = {};
 let linkPolylines: L.Polyline[] = [];
+let selectedRegionId: string | null = null;
+let lastStatuses: Record<string, StationStatus> = {};
 
 const GEOJSON_URL = '/serbia-districts.geojson';
 
@@ -100,14 +102,15 @@ export function initNetworkMap(containerId: string): void {
     minZoom: 6,
     maxZoom: 15,
     zoomControl: true,
-    attributionControl: true
+    attributionControl: true,
+    boxZoom: false
   });
 
-  // High-definition OpenStreetMap Dark Matter tiles for NOC aesthetic
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 19
+  // Standard OpenStreetMap tiles, with a graceful placeholder for any tile that fails
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+    errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
   }).addTo(map);
 
   // Render real district (okrug) boundaries from GeoJSON, then overlay links & stations.
@@ -135,32 +138,41 @@ async function loadDistrictBoundaries(): Promise<void> {
 
     const baseStyle = (props: DistrictFeatureProps): L.PathOptions => ({
       color: '#38bdf8',
-      weight: 1.2,
-      opacity: 0.85,
+      weight: 1.5,
+      opacity: 0.9,
       fillColor: props.fill,
-      fillOpacity: 0.18
+      fillOpacity: 0.18,
+      className: 'district-boundary'
     });
 
     districtLayer = L.geoJSON(geojson, {
       style: (feature) => baseStyle(feature!.properties as DistrictFeatureProps),
       onEachFeature: (feature, layer) => {
         const props = feature.properties as DistrictFeatureProps;
-        const stationsInDistrict = NETWORK_STATIONS.filter(s => s.region === props.regionId).length;
 
-        layer.bindTooltip(`
-          <div style="font-family:'Inter',sans-serif;">
-            <strong style="color:#f8fafc;font-size:0.88rem;">${props.regionName}</strong><br/>
-            <span style="color:#94a3b8;font-size:0.78rem;">Upravni centar: ${props.centerCity}</span><br/>
-            <span style="color:#94a3b8;font-size:0.78rem;">Regija: ${props.macroRegion}</span><br/>
-            <span style="color:#38bdf8;font-size:0.78rem;font-weight:600;">Stanica: ${stationsInDistrict}</span>
-          </div>
-        `, { sticky: true, opacity: 0.95 });
+        // Tooltip that shows on hover — district name + center city
+        bindDistrictTooltip(layer, props);
 
         layer.on('mouseover', () => {
-          (layer as L.Path).setStyle({ fillOpacity: 0.4, weight: 2.5, color: '#f59e0b' });
+          if (selectedRegionId) return;
+          (layer as L.Path).setStyle({
+            fillOpacity: 0.45,
+            weight: 3.5,
+            color: '#f59e0b',
+            opacity: 1
+          });
+          (layer as L.Path).bringToFront?.();
         });
         layer.on('mouseout', () => {
-          (layer as L.Path).setStyle(baseStyle(props));
+          applyDistrictStyles();
+        });
+
+        layer.on('click', () => {
+          if (selectedRegionId === props.regionId) {
+            clearRegionSelection();
+          } else {
+            selectRegion(props.regionId, true);
+          }
         });
       }
     }).addTo(map);
@@ -176,6 +188,125 @@ async function loadDistrictBoundaries(): Promise<void> {
   }
 }
 
+/**
+ * Binds the hover tooltip (district name + center city) to a district layer.
+ * Extracted so it can be re-bound after a layer's tooltip is removed on selection.
+ */
+function bindDistrictTooltip(layer: L.Layer, props: DistrictFeatureProps): void {
+  layer.bindTooltip(
+    `<strong>${props.regionName}</strong><br><span style="opacity:0.7">${props.centerCity} · ${props.macroRegion}</span>`,
+    {
+      sticky: true,
+      direction: 'top',
+      offset: [0, -8],
+      className: 'district-tooltip'
+    }
+  );
+}
+
+function selectedRegionLayer(): L.Layer | undefined {
+  let found: L.Layer | undefined;
+  districtLayer?.eachLayer(layer => {
+    const props = (layer as L.Path & { feature?: { properties: DistrictFeatureProps } }).feature?.properties;
+    if (props && selectedRegionId && props.regionId === selectedRegionId) found = layer;
+  });
+  return found;
+}
+
+type DistrictPathLayer = L.Path & { feature?: { properties: DistrictFeatureProps } };
+
+function applyDistrictStyles(): void {
+  districtLayer?.eachLayer(layer => {
+    const path = layer as DistrictPathLayer;
+    const props = path.feature?.properties;
+    if (!props) return;
+
+    const isSelected = selectedRegionId !== null && props.regionId === selectedRegionId;
+    const isDimmed = selectedRegionId !== null && !isSelected;
+
+    if (isSelected) {
+      path.setStyle({
+        color: '#ef4444',
+        weight: 4,
+        opacity: 1,
+        fillColor: '#10b981',
+        fillOpacity: 0.45
+      });
+        } else if (isDimmed) {
+          path.setStyle({
+            color: '#38bdf8',
+            weight: 0,
+            opacity: 0,
+            fillColor: props.fill,
+            fillOpacity: 0
+          });
+    } else {
+      path.setStyle({
+        color: '#38bdf8',
+        weight: 1.5,
+        opacity: 0.9,
+        fillColor: props.fill,
+        fillOpacity: 0.18
+      });
+    }
+
+    // Leaflet's SVG renderer only reads `className` when a path is created
+    // (setStyle never updates it), so state classes are managed on the DOM
+    // element directly to make the CSS filters actually apply.
+    const el = path.getElement() as HTMLElement | undefined;
+    if (el) {
+      if (isSelected) L.DomUtil.addClass(el, 'district-selected');
+      else L.DomUtil.removeClass(el, 'district-selected');
+      L.DomUtil.removeClass(el, 'district-dimmed');
+    }
+  });
+}
+
+function selectRegion(regionId: string, fit: boolean): void {
+  selectedRegionId = regionId;
+  // Only the district polygon itself is styled (green fill + red border via applyDistrictStyles);
+  // no rectangular bounding box / frame rectangle is drawn around the area.
+  applyDistrictStyles();
+
+  // Remove the hover tooltip from the selected district — Leaflet's sticky
+  // tooltip would otherwise stay pinned to the cursor as a floating box,
+  // and the district info panel takes over showing details anyway.
+  districtLayer?.eachLayer(layer => {
+    const path = layer as DistrictPathLayer;
+    const props = path.feature?.properties;
+    if (props && props.regionId === regionId && path.getTooltip()) {
+      path.closeTooltip();
+      path.unbindTooltip();
+    }
+  });
+
+  if (fit) {
+    const layer = selectedRegionLayer();
+    // Fit view to polygon bounds without drawing any bounding-box rectangle overlay
+    if (layer) map?.fitBounds((layer as L.Polygon).getBounds(), { padding: [40, 40] });
+  }
+  renderLinks(lastStatuses);
+  renderStations(lastStatuses);
+}
+
+function clearRegionSelection(): void {
+  selectedRegionId = null;
+  applyDistrictStyles();
+
+  // Restore hover tooltips removed during selection.
+  districtLayer?.eachLayer(layer => {
+    const path = layer as DistrictPathLayer;
+    const props = path.feature?.properties;
+    if (props && !path.getTooltip()) {
+      bindDistrictTooltip(layer, props);
+    }
+  });
+
+  if (districtLayer) map?.fitBounds(districtLayer.getBounds(), { padding: [12, 12] });
+  renderLinks(lastStatuses);
+  renderStations(lastStatuses);
+}
+
 function renderLinks(stationStatuses: Record<string, StationStatus>): void {
   if (!map) return;
 
@@ -183,10 +314,14 @@ function renderLinks(stationStatuses: Record<string, StationStatus>): void {
   linkPolylines.forEach(l => map?.removeLayer(l));
   linkPolylines = [];
 
+  const inRegion = (station: MapStation): boolean =>
+    !selectedRegionId || station.region === selectedRegionId;
+
   NETWORK_LINKS.forEach(link => {
     const from = stationById(link.from);
     const to = stationById(link.to);
     if (!from || !to) return;
+    if (!inRegion(from) || !inRegion(to)) return;
 
     const status = linkStatus(
       stationStatuses[from.id] ?? 'UNKNOWN',
@@ -201,11 +336,6 @@ function renderLinks(stationStatuses: Record<string, StationStatus>): void {
       dashArray: link.type === 'mw' ? '6, 6' : undefined
     }).addTo(map!);
 
-    polyline.bindTooltip(`
-      <strong>${from.name} ↔ ${to.name}</strong><br/>
-      <span>Tip: ${link.type.toUpperCase()} ${link.label ? '(' + link.label + ')' : ''}</span>
-    `);
-
     linkPolylines.push(polyline);
   });
 }
@@ -218,9 +348,9 @@ function renderStations(stationStatuses: Record<string, StationStatus>): void {
   stationMarkers = {};
 
   NETWORK_STATIONS.forEach(station => {
+    if (selectedRegionId && station.region !== selectedRegionId) return;
     const status = stationStatuses[station.id] ?? 'UNKNOWN';
     const color = statusColor(status);
-    const district = DISTRICT_META[station.region];
 
     const marker = L.circleMarker([station.lat, station.lon], {
       radius: 7,
@@ -231,24 +361,10 @@ function renderStations(stationStatuses: Record<string, StationStatus>): void {
       fillOpacity: 0.95
     }).addTo(map!);
 
-    marker.bindPopup(`
-      <div style="font-family:'Inter',sans-serif;">
-        <strong style="color:#f8fafc;font-size:0.92rem;">${station.name}</strong>
-        <div style="color:#94a3b8;font-size:0.78rem;margin-top:4px;">
-          <div><strong>ID:</strong> ${station.id}</div>
-          <div><strong>Klaster:</strong> ${station.cluster}</div>
-          <div><strong>Okrug:</strong> ${district?.name || station.region}</div>
-          <div style="margin-top:6px;">
-            <strong>Status:</strong> 
-            <span style="color:${color};font-weight:700;padding:2px 6px;background:rgba(255,255,255,0.1);border-radius:4px;">
-              ${status}
-            </span>
-          </div>
-        </div>
-      </div>
-    `);
-
     marker.on('click', () => {
+      if (selectedRegionId !== station.region) {
+        selectRegion(station.region, true);
+      }
       const row = document.querySelector(`tr[data-station="${station.id}"]`);
       row?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       row?.classList.add('row-highlight');
@@ -266,6 +382,7 @@ export function updateNetworkMap(kpiData: KpiCellLike[]): void {
   NETWORK_STATIONS.forEach(s => {
     statuses[s.id] = deriveStationStatus(s.id, kpiData);
   });
+  lastStatuses = statuses;
 
   renderLinks(statuses);
   renderStations(statuses);

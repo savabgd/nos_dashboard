@@ -76,6 +76,57 @@
             </article>
         </section>
 
+        <!-- NOC Monitoring Panel -->
+        <section class="noc-panel" aria-label="NOC Monitoring">
+            <div class="noc-health">
+                <div class="noc-health-ring" id="healthRing">
+                    <svg viewBox="0 0 100 100">
+                        <circle class="health-bg" cx="50" cy="50" r="42" />
+                        <circle class="health-fill" id="healthArc" cx="50" cy="50" r="42" />
+                    </svg>
+                    <div class="health-score" id="healthScore">--</div>
+                </div>
+                <div class="noc-health-info">
+                    <div class="noc-health-label">Network Health</div>
+                    <div class="noc-uptime">
+                        <span class="uptime-dot" id="uptimeDot"></span>
+                        <span id="uptimeText">Uptime: --</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="noc-sla">
+                <div class="sla-header">
+                    <span class="sla-title">SLA Compliance</span>
+                    <span class="sla-value" id="slaValue">--%</span>
+                </div>
+                <div class="sla-bar-track">
+                    <div class="sla-bar-fill" id="slaBar" style="width:0%"></div>
+                </div>
+                <div class="sla-target">Target: 99.5%</div>
+            </div>
+
+            <div class="noc-alarms">
+                <div class="alarms-header">
+                    <span class="alarms-title">🔴 Active Alarms</span>
+                    <button id="soundToggle" class="btn-sound" type="button" title="Toggle alarm sound">🔇</button>
+                </div>
+                <div class="alarms-list" id="alarmsList">
+                    <div class="alarm-empty">No active alarms</div>
+                </div>
+            </div>
+
+            <div class="noc-incidents">
+                <div class="incidents-header">
+                    <span class="incidents-title">📋 Recent Incidents</span>
+                    <span class="incidents-count" id="incidentCount">0</span>
+                </div>
+                <div class="incidents-timeline" id="incidentsTimeline">
+                    <div class="incident-empty">No recent incidents</div>
+                </div>
+            </div>
+        </section>
+
         <section class="map-section" aria-label="Mrežna mapa">
             <div class="map-header">
                 <div>
@@ -86,7 +137,6 @@
             </div>
             <div class="network-map-wrapper">
                 <div id="networkMap" class="network-map-container"></div>
-                <div id="mapTooltip" class="map-tooltip hidden"></div>
                 <aside class="map-legend">
                     <h4>Legenda</h4>
                     <div class="legend-item"><span class="legend-dot good"></span> Stanica OK</div>

@@ -310,10 +310,10 @@ body {
     max-height: 220px;
 }
 
-/* Network map */
+/* Network map — no outer rectangular bounding box/frame; only the district polygon boundary is rendered */
 .map-section {
     background: var(--bg-card);
-    border: 1px solid var(--border-color);
+    border: none;
     border-radius: var(--radius);
     padding: 14px 16px;
     margin-bottom: 16px;
@@ -371,8 +371,10 @@ body {
 }
 
 .network-map-container {
-    background: #0f172a;
-    border: 1px solid var(--border-color);
+    background: #e8e2d8;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
     border-radius: var(--radius-sm);
     overflow: hidden;
     position: relative;
@@ -381,33 +383,20 @@ body {
 #networkMap {
     width: 100%;
     height: 540px;
-    background: #0f172a;
+    background: #e8e2d8;
     z-index: 1;
+    position: relative;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .leaflet-container {
     font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
-    background: #0b1120 !important;
-}
-
-.leaflet-popup-content-wrapper {
-    background: rgba(15, 23, 42, 0.95) !important;
-    color: #f8fafc !important;
-    border: 1px solid #334155;
-    backdrop-filter: blur(8px);
-    border-radius: 8px !important;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
-    padding: 2px 4px !important;
-}
-
-.leaflet-popup-content {
-    font-size: 0.82rem;
-    line-height: 1.5;
-    margin: 10px 14px !important;
-}
-
-.leaflet-popup-tip {
-    background: rgba(15, 23, 42, 0.95) !important;
+    background: #e8e2d8 !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 .map-link {
@@ -426,6 +415,452 @@ body {
 
 .map-station:hover {
     r: 7;
+}
+
+/* ── District boundary hover transitions ── */
+.district-boundary {
+    transition: stroke 0.25s ease, stroke-width 0.25s ease, fill-opacity 0.25s ease, opacity 0.25s ease;
+}
+/* Ukloni crni focus okvir nakon klika na region */
+#networkMap .leaflet-interactive:focus,
+#networkMap .leaflet-interactive:focus-visible,
+#networkMap .district-boundary:focus,
+#networkMap .district-selected:focus {
+    outline: none !important;
+}
+
+.district-boundary:hover {
+    stroke: #f59e0b;
+    stroke-width: 2.5px;
+}
+
+.district-selected {
+    stroke: #ef4444;
+    stroke-width: 4px;
+    fill-opacity: 0.45;
+}
+
+.district-dimmed {
+    opacity: 0.35;
+}
+
+/* ── Custom district tooltip ──
+   The map always renders light OSM tiles (both themes), so the tooltip
+   is always a light card — never a dark/black box over the map. */
+.district-tooltip {
+    background: rgba(255, 255, 255, 0.97) !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    padding: 8px 14px !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+    font-size: 0.8rem !important;
+    line-height: 1.5 !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18) !important;
+    pointer-events: none;
+}
+
+.district-tooltip strong {
+    color: #b45309;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.district-tooltip::before {
+    border-top-color: rgba(255, 255, 255, 0.97) !important;
+}
+
+/* ══════════════════════════════════════════════
+   NOC MONITORING PANEL
+   ══════════════════════════════════════════════ */
+
+.noc-panel {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: 16px;
+    align-items: start;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+/* ── Health Ring ── */
+.noc-health {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.noc-health-ring {
+    position: relative;
+    width: 80px;
+    height: 80px;
+}
+
+.noc-health-ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.health-bg {
+    fill: none;
+    stroke: var(--border-color);
+    stroke-width: 6;
+}
+
+.health-fill {
+    fill: none;
+    stroke: var(--accent-green);
+    stroke-width: 6;
+    stroke-linecap: round;
+    stroke-dasharray: 264;
+    stroke-dashoffset: 264;
+    transition: stroke-dashoffset 1s ease, stroke 0.5s ease;
+}
+
+.health-fill.warning { stroke: var(--accent-yellow); }
+.health-fill.bad { stroke: var(--accent-red); }
+
+.health-score {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.noc-health-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.noc-health-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.noc-uptime {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.uptime-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.uptime-dot.warning { background: var(--accent-yellow); }
+.uptime-dot.bad { background: var(--accent-red); animation: pulse-dot-alert 1s ease-in-out infinite; }
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+}
+
+@keyframes pulse-dot-alert {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.2); }
+}
+
+/* ── SLA Compliance ── */
+.noc-sla {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 180px;
+}
+
+.sla-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+}
+
+.sla-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sla-value {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--accent-green);
+}
+
+.sla-value.warning { color: var(--accent-yellow); }
+.sla-value.bad { color: var(--accent-red); }
+
+.sla-bar-track {
+    height: 8px;
+    background: var(--bg-primary);
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.sla-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-green), #34d399);
+    border-radius: 4px;
+    transition: width 1s ease, background 0.5s ease;
+}
+
+.sla-bar-fill.warning { background: linear-gradient(90deg, var(--accent-yellow), #fbbf24); }
+.sla-bar-fill.bad { background: linear-gradient(90deg, var(--accent-red), #f87171); }
+
+.sla-target {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-align: right;
+}
+
+/* ── Active Alarms ── */
+.noc-alarms {
+    min-width: 260px;
+    max-width: 320px;
+}
+
+.alarms-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.alarms-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-sound {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-sound:hover {
+    border-color: var(--accent-blue);
+    background: var(--bg-hover);
+}
+
+.btn-sound.active {
+    border-color: var(--accent-red);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.alarms-list {
+    max-height: 140px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.alarm-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--bg-primary);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent-red);
+    font-size: 0.72rem;
+    animation: alarm-flash 2s ease-in-out infinite;
+}
+
+.alarm-item.warning {
+    border-left-color: var(--accent-yellow);
+    animation: none;
+}
+
+@keyframes alarm-flash {
+    0%, 100% { background: var(--bg-primary); }
+    50% { background: rgba(239, 68, 68, 0.08); }
+}
+
+.alarm-severity {
+    font-weight: 700;
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.alarm-severity.critical {
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--accent-red);
+}
+
+.alarm-severity.major {
+    background: rgba(245, 158, 11, 0.2);
+    color: var(--accent-yellow);
+}
+
+.alarm-text {
+    flex: 1;
+    color: var(--text-secondary);
+    line-height: 1.3;
+}
+
+.alarm-time {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    white-space: nowrap;
+}
+
+.alarm-empty, .incident-empty {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 12px;
+    font-style: italic;
+}
+
+/* ── Incident Timeline ── */
+.noc-incidents {
+    min-width: 220px;
+    max-width: 280px;
+}
+
+.incidents-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.incidents-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.incidents-count {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.incidents-count.has-incidents {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: var(--accent-red);
+}
+
+.incidents-timeline {
+    max-height: 140px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.incident-item {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.72rem;
+}
+
+.incident-item:last-child { border-bottom: none; }
+
+.incident-dot-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding-top: 3px;
+}
+
+.incident-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.incident-dot.resolved { background: var(--accent-green); }
+.incident-dot.active { background: var(--accent-red); animation: pulse-dot-alert 1s ease-in-out infinite; }
+.incident-dot.investigating { background: var(--accent-yellow); }
+
+.incident-line {
+    width: 1px;
+    flex: 1;
+    background: var(--border-color);
+}
+
+.incident-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.incident-title {
+    color: var(--text-primary);
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.incident-meta {
+    color: var(--text-muted);
+    font-size: 0.65rem;
+}
+
+/* ── Responsive NOC panel ── */
+@media (max-width: 1200px) {
+    .noc-panel {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .noc-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .noc-alarms, .noc-incidents {
+        max-width: none;
+    }
 }
 
 .map-tooltip {

@@ -94,7 +94,7 @@ class AlertAuditLog(Base):
     alert_id = Column(String(255), nullable=False, index=True)
     action = Column(String(50), nullable=False)  # created, acknowledged, resolved, suppressed, escalated
     old_status = Column(SQLEnum(AlertStatus), nullable=True)
-    new_status = Column(AlertStatus), nullable=False)
+    new_status = Column(SQLEnum(AlertStatus), nullable=False)
     changed_by = Column(String(255), nullable=True)  # User performing action
     reason = Column(String(500), nullable=True)
     changed_at = Column(DateTime, default=datetime.utcnow, index=True)

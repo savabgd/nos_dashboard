@@ -6,7 +6,8 @@ Main REST API endpoint for KPI data
 import logging
 import time
 import json
-from asyncio import sleep
+import os
+import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
@@ -34,11 +35,14 @@ from .models import (
 )
 from .database import clickhouse_client
 from .kpi_calculator import (
-    calculate_kpis_batch, 
-    calculate_aggregated_metrics, 
+    calculate_kpis_batch,
+    calculate_aggregated_metrics,
     get_cell_status
 )
 from .cache import cache_client
+from .alert_models import Base, AlertRecord, AlertStatus, AlertSeverity
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 # Setup logging
 logging.basicConfig(
@@ -312,8 +316,10 @@ async def get_kpis(
     logger.debug(f"Fetching KPI data from database")
     
     # Fetch raw PM counter data (filters applied in SQL for performance)
+    # to_thread — sinkroni ClickHouse driver NE SME da blokira event loop
     start_time = time.time()
-    pm_data = clickhouse_client.get_latest_kpi(
+    pm_data = await asyncio.to_thread(
+        clickhouse_client.get_latest_kpi,
         hours=hours,
         limit=10000,
         cluster=cluster,
@@ -402,8 +408,8 @@ async def get_aggregated_kpis(
     if cached_response is not None:
         return AggregatedKpiResponse(**cached_response)
     
-    # Fetch and calculate KPI data
-    pm_data = clickhouse_client.get_latest_kpi(hours=hours, limit=10000)
+    # Fetch and calculate KPI data (u thread pool-u — ne blokira event loop)
+    pm_data = await asyncio.to_thread(clickhouse_client.get_latest_kpi, hours=hours, limit=10000)
     kpi_data = calculate_kpis_batch(pm_data)
     
     # Group and aggregate
@@ -549,7 +555,7 @@ async def get_clusters(_: bool = Depends(verify_token)):
     
     query = "SELECT DISTINCT klaster FROM pm_counters ORDER BY klaster"
     try:
-        result = clickhouse_client.client.execute(query, with_column_types=False)
+        result = await asyncio.to_thread(clickhouse_client.client.execute, query)
         clusters = [row[0] for row in result if row[0]]
         cache_client.set(cache_key, clusters, ttl=3600)  # Cache for 1 hour
         return {"success": True, "clusters": clusters, "count": len(clusters)}
@@ -582,7 +588,7 @@ async def get_stations(
         params = {}
     
     try:
-        result = clickhouse_client.client.execute(query, params, with_column_types=False)
+        result = await asyncio.to_thread(clickhouse_client.client.execute, query, params)
         stations = [row[0] for row in result if row[0]]
         cache_client.set(cache_key, stations, ttl=3600)
         return {"success": True, "stations": stations, "count": len(stations)}
@@ -622,7 +628,7 @@ async def get_cells(
     query = f"SELECT DISTINCT celija, stanica, klaster, band FROM pm_counters WHERE {where} ORDER BY celija"
     
     try:
-        result = clickhouse_client.client.execute(query, params, with_column_types=False)
+        result = await asyncio.to_thread(clickhouse_client.client.execute, query, params)
         cells = []
         for row in result:
             cells.append({
@@ -642,8 +648,79 @@ async def get_cells(
 # Alerting Endpoints
 # ============================================================================
 
-# In-memory alerts storage (in production, use database)
-_in_memory_alerts: Dict[str, Dict] = {}
+# ── Perzistencija alerta (SQLAlchemy — SQLite po defaultu, PostgreSQL via ALERT_DB_URL) ──
+
+ALERT_DB_URL = os.getenv("ALERT_DB_URL", "sqlite:///./alerts.db")
+alert_engine = create_engine(
+    ALERT_DB_URL,
+    connect_args={"check_same_thread": False} if ALERT_DB_URL.startswith("sqlite") else {}
+)
+AlertSession = sessionmaker(bind=alert_engine, expire_on_commit=False)
+Base.metadata.create_all(alert_engine)
+
+
+def _alert_to_dict(a: AlertRecord) -> Dict[str, Any]:
+    """Konvertuje ORM zapis u dict (kompatibilno sa starim in-memory formatom)."""
+    return {
+        "id": a.id,
+        "cell": a.cell,
+        "cluster": a.cluster,
+        "metric": a.metric,
+        "value": float(a.value) if a.value is not None else 0.0,
+        "threshold": float(a.threshold) if a.threshold is not None else 0.0,
+        "severity": a.severity.value if isinstance(a.severity, AlertSeverity) else str(a.severity),
+        "status": a.status.value if isinstance(a.status, AlertStatus) else str(a.status),
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+        "acknowledged_at": a.acknowledged_at.isoformat() if a.acknowledged_at else None,
+        "resolved_at": a.resolved_at.isoformat() if a.resolved_at else None,
+        "resolved_by": a.resolved_by,
+        "resolution_note": a.resolution_note,
+        "occurrences": a.occurrences or 1,
+    }
+
+
+def _db_upsert_alert(new_alert: Dict[str, Any]) -> None:
+    """Ubaci novi alert ili poveća occurrences ako već postoji (isti id)."""
+    with AlertSession() as db:
+        existing = db.get(AlertRecord, new_alert["id"])
+        if existing:
+            existing.occurrences = (existing.occurrences or 1) + 1
+            existing.value = new_alert["value"]
+        else:
+            db.add(AlertRecord(
+                id=new_alert["id"],
+                cell=new_alert["cell"],
+                cluster=new_alert["cluster"],
+                metric=new_alert["metric"],
+                value=new_alert["value"],
+                threshold=new_alert["threshold"],
+                severity=AlertSeverity(new_alert["severity"]),
+                status=AlertStatus.NEW,
+            ))
+        db.commit()
+
+
+def _db_query_alerts(alert_status: Optional[str], alert_severity: Optional[str]) -> List[Dict[str, Any]]:
+    """Lista alerta iz baze (najnoviji prvi), opciono filtrirana."""
+    with AlertSession() as db:
+        q = db.query(AlertRecord)
+        if alert_status:
+            q = q.filter(AlertRecord.status == AlertStatus(alert_status))
+        if alert_severity:
+            q = q.filter(AlertRecord.severity == AlertSeverity(alert_severity))
+        return [_alert_to_dict(a) for a in q.order_by(AlertRecord.created_at.desc()).limit(500).all()]
+
+
+def _db_update_alert(alert_id: str, **fields: Any) -> Optional[Dict[str, Any]]:
+    """Promeni polja alerta; vraća None ako ne postoji."""
+    with AlertSession() as db:
+        a = db.get(AlertRecord, alert_id)
+        if not a:
+            return None
+        for key, value in fields.items():
+            setattr(a, key, value)
+        db.commit()
+        return _alert_to_dict(a)
 
 
 async def send_webhook_notification(alerts: List[Dict[str, Any]]) -> None:
@@ -682,14 +759,9 @@ async def get_alerts(
     severity: Optional[str] = Query(default=None, description="Filter by severity"),
     _: bool = Depends(verify_token)
 ):
-    """Get list of active alerts"""
-    alerts = list(_in_memory_alerts.values())
-    
-    if status:
-        alerts = [a for a in alerts if a.get("status") == status]
-    if severity:
-        alerts = [a for a in alerts if a.get("severity") == severity]
-    
+    """Get list of active alerts (perzistovani u bazi)"""
+    alerts = await asyncio.to_thread(_db_query_alerts, status, severity)
+
     active_count = len([a for a in alerts if a.get("status") == "NEW"])
     
     return AlertResponse(
@@ -773,10 +845,10 @@ async def check_alerts(
                     "resolved_at": None
                 }
                 
-                _in_memory_alerts[alert_id] = new_alert
                 new_alerts.append(new_alert)
-    
+
     if new_alerts:
+        await asyncio.to_thread(lambda: [_db_upsert_alert(a) for a in new_alerts])
         await send_webhook_notification(new_alerts)
     
     return {
@@ -797,10 +869,13 @@ async def acknowledge_alert(
     _: bool = Depends(verify_token)
 ):
     """Acknowledge an alert"""
-    if alert_id in _in_memory_alerts:
-        _in_memory_alerts[alert_id]["status"] = "ACKNOWLEDGED"
+    updated = await asyncio.to_thread(
+        _db_update_alert, alert_id,
+        status=AlertStatus.ACKNOWLEDGED, acknowledged_at=datetime.utcnow()
+    )
+    if updated:
         return {"success": True, "message": f"Alert {alert_id} acknowledged"}
-    
+
     raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
 
 
@@ -814,11 +889,13 @@ async def resolve_alert(
     _: bool = Depends(verify_token)
 ):
     """Resolve an alert"""
-    if alert_id in _in_memory_alerts:
-        _in_memory_alerts[alert_id]["status"] = "RESOLVED"
-        _in_memory_alerts[alert_id]["resolved_at"] = datetime.utcnow().isoformat()
+    updated = await asyncio.to_thread(
+        _db_update_alert, alert_id,
+        status=AlertStatus.RESOLVED, resolved_at=datetime.utcnow()
+    )
+    if updated:
         return {"success": True, "message": f"Alert {alert_id} resolved"}
-    
+
     raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
 
 
@@ -873,7 +950,7 @@ async def stream_kpis(
             except Exception as exc:
                 logger.error(f"SSE snapshot failed: {exc}")
                 yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
-            await sleep(interval)
+            await asyncio.sleep(interval)
 
     return StreamingResponse(
         event_generator(),

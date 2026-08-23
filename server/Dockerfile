@@ -33,6 +33,9 @@ FROM base as production
 COPY server/ ./server/
 COPY .env.example .env
 
+# Perzistencija alerta (SQLite fajl se montira kao volume u compose-u)
+RUN mkdir -p /app/data
+
 # Create non-root user for security
 RUN useradd --create-home --shell /bin/bash appuser && \
     chown -R appuser:appuser /app
@@ -47,7 +50,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8080/health').raise_for_status()" || exit 1
 
 # Run the application
-CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]
+# NOTE: --workers 1 — alarmi i keš su in-process stanje; više workera bi
+# davalo različite podatke različitim korisnicima.
+CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
 
 # Stage 3: Development image (optional)
 FROM base as development

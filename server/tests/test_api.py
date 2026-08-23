@@ -218,7 +218,7 @@ class TestRealtimeEndpoints:
         async def drain():
             resp = await main.stream_kpis(request=request, hours=24, interval=30)
             chunks = []
-            with mock.patch("server.main.sleep", new=mock.AsyncMock(return_value=None)):
+            with mock.patch("asyncio.sleep", new=mock.AsyncMock(return_value=None)):
                 async for chunk in resp.body_iterator:
                     chunks.append(chunk)
                     if "event: kpis" in chunks[-1] or "event: error" in chunks[-1]:

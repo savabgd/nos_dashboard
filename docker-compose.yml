@@ -82,6 +82,10 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=your-redis-password
+      # Perzistencija alerta (preživljava restart kontejnera)
+      - ALERT_DB_URL=sqlite:////app/data/alerts.db
+    volumes:
+      - alert_data:/app/data
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -241,6 +245,7 @@ volumes:
   clickhouse_config:
   redis_data:
   prometheus_data:
+  alert_data:
 
 # -----------------------------------------------------------------------------
 # Networks

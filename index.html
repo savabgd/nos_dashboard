@@ -11,8 +11,13 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- ============================================================
+       APP SHELL: levi sidebar (navigacija) + glavni sadržaj desno.
+       Na mobilnom se sidebar skriva iza ☰ dugmeta (sidebar-toggle).
+       ============================================================ -->
   <div class="app-shell" id="appShell">
 
+    <!-- SIDEBAR: pregled, 4 mrežna domena, alati. Klikove obrađuje app.ts -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
         <span class="brand-icon">C</span>
@@ -42,6 +47,7 @@
 
     <div class="main-area">
 
+  <!-- TOP BAR: brend + LIVE badge (zelen=stream radi, crven=API pao) + tema -->
   <header class="top-bar">
         <div class="top-bar-brand">
             <span class="brand-icon">C</span>
@@ -55,6 +61,7 @@
     </header>
 
     <main class="main-wrapper">
+        <!-- TOOLBAR: vremenski opseg + Refresh + "ažurirano" vreme -->
         <div class="toolbar">
             <select id="timeRange" class="time-select">
                 <option value="1">Last 1 Hour</option>
@@ -65,8 +72,10 @@
             <span id="lastUpdated" class="last-updated"></span>
         </div>
 
+        <!-- DOMENI: RAN / IMS / Transport / Core — puni ih app.ts (renderDomainCards) -->
         <section class="domain-grid" id="domainGrid" aria-label="Mrežni domeni"></section>
 
+        <!-- KPI KARTICE: 5 najvažnijih brojeva (punih ih updateSummaryCards) -->
         <section class="kpi-grid" aria-label="KPI summary">
             <article class="kpi-card">
                 <div class="kpi-icon">CELL</div>
@@ -109,7 +118,7 @@
             </article>
         </section>
 
-        <!-- NOC Monitoring Panel -->
+        <!-- NOC PANEL: health ring, SLA bar, aktivni alarmi, incidenti, uptime -->
         <section class="noc-panel" aria-label="NOC Monitoring">
             <div class="noc-health">
                 <div class="noc-health-ring" id="healthRing">
@@ -160,6 +169,7 @@
             </div>
         </section>
 
+        <!-- MAPA: Leaflet crta u #networkMap; legenda je statična -->
         <section class="map-section" id="mapSection" aria-label="Mrežna mapa">
             <div class="map-header">
                 <div>
@@ -183,6 +193,7 @@
             </div>
         </section>
 
+        <!-- GRAFIKONI: 4 Chart.js canvas-a (pune ih update*Chart funkcije) -->
         <section class="charts-row" aria-label="KPI charts">
             <div class="chart-panel">
                 <h3>Access Fail Rate Trend</h3>
@@ -202,6 +213,7 @@
             </div>
         </section>
 
+        <!-- TABELA: svi KPI detalji po ćeliji; klik na red → detail drawer -->
         <section class="table-section">
             <div class="table-header">
                 <h3>KPI Details by Cell</h3>
@@ -238,7 +250,8 @@
     </div><!-- /main-area -->
   </div><!-- /app-shell -->
 
-  <!-- Detail drawer (desni panel sa detaljima) -->
+  <!-- DETAIL DRAWER: desni panel koji klizi izvan ekrana; sadržaj prave
+       openCellDrawer / openStationDrawer / openRegionDrawer / openDomainDrawer -->
   <div class="drawer-backdrop" id="drawerBackdrop"></div>
   <aside class="detail-drawer" id="detailDrawer" aria-hidden="true">
     <header class="drawer-header">

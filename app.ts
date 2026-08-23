@@ -1,9 +1,29 @@
 /**
- * VoLTE KPI Dashboard - Main Application
- * TypeScript implementation with improved type safety and configuration
- * 
+ * ============================================================
+ * app.ts — GLAVNA APLIKACIJA (mozak dashboarda)
+ * ============================================================
+ *
+ * ODGOVARA ZA SVE osim mape (mapa je odvojena u network-map.ts):
+ *  1. Dohvat podataka  — fetch sa API-ja, SSE live stream, mock fallback
+ *  2. KPI kartice      — gornjih 5 kartica + delte ↑↓
+ *  3. Domeni           — RAN/IMS/Transport/Core kartice + sparkline timeline
+ *  4. Tabela ćelija    — pretraga, filter "samo kritično", domen filter
+ *  5. Chart.js grafikoni — access fail, drop rate, integrity, Erlang
+ *  6. NOC panel        — health ring, SLA bar, alarmi, incidenti, uptime
+ *  7. Detail drawer    — desni panel sa detaljima (ćelija/stanica/okrug/domen)
+ *  8. Sidebar navigacija — levi meni (pregled, domeni, alati)
+ *  9. Tema, toast notifikacije, CSV export
+ *
+ * POKRETANJE: index.html učitava ovaj fajl kao module; na dnu fajla
+ * stoji DOMContentLoaded listener koji pokreće sve (boot sekvenca).
+ *
+ * TOK PODATAKA:
+ *   loadData() → fetch API → kpiData[] → updateDashboard()
+ *   SSE 'kpis' event (svakih ~30s) → applyKpiPayload() → updateDashboard()
+ *   Ako API ne radi → generateMockData() (crveni LIVE badge upozorava)
+ *
  * @author CETIN
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 import Chart from 'chart.js/auto';
@@ -18,37 +38,41 @@ import {
 import type { NetworkDomain } from './stations';
 
 // ============================================================================
-// Types and Interfaces
+// TIPOVI — oblici podataka koje aplikacija koristi
 // ============================================================================
 
+/** Jedna ćelija (sektor jednog frekventnog opsega jedne stanice) — red iz API-ja. */
 interface KpiCell {
-  celija: string;
-  stanica: string;
-  klaster: string;
-  band: string;
-  volteAccessFailureRate: number;
-  volteDropRate: number;
-  volteCellIntegrity: number;
-  volteErlang: number;
-  volteSuccCalls: number;
-  volteMobilitySR: number;
-  pdcchErrorRateVolte: number;
-  volteDropsCount: number;
+  celija: string;   // ID ćelije, npr. "BGD_CEN_001_1800_1"
+  stanica: string;  // ID stanice kojoj pripada
+  klaster: string;  // klaster (grupa stanica)
+  band: string;     // frekventni opseg: "800" | "1800" | "2100" MHz
+  volteAccessFailureRate: number; // % neuspešnih uspostavljanja poziva
+  volteDropRate: number;          // % otpuštenih poziva
+  volteCellIntegrity: number;     // % integritet ćelije (viši = bolji)
+  volteErlang: number;            // opterećenje (Erlang)
+  volteSuccCalls: number;         // broj uspešnih poziva
+  volteMobilitySR: number;        // % uspeh handover-a
+  pdcchErrorRateVolte: number;    // % PDCCH greške
+  volteDropsCount: number;        // apsolutan broj otpuštenih poziva
+  // opciona polja (ne moraju svi izvori da ih šalju):
   volteQci1AddSuccRate?: number;
   volteQci1InitSuccRate?: number;
   volteQci5AddSuccRate?: number;
   volteQci5InitSuccRate?: number;
-  status?: 'GOOD' | 'WARNING' | 'BAD';
-  datetime?: string;
+  status?: 'GOOD' | 'WARNING' | 'BAD'; // status računat na backendu
+  datetime?: string;                   // vreme merenja
 }
 
+/** Zbirni (agregirani) pokazatelji cele mreže — za gornje KPI kartice. */
 interface KpiMetrics {
-  dropRate: number;
-  accessFailRate: number;
-  cellIntegrity: number;
-  erlang: number;
+  dropRate: number;       // prosečan drop rate
+  accessFailRate: number; // prosečan access fail
+  cellIntegrity: number;  // prosečan integritet
+  erlang: number;         // ukupan Erlang
 }
 
+/** SLA pragovi — iznad/ispod njih se boje vrednosti i računa status. */
 interface SlaThresholds {
   accessFailRate: number;
   dropRate: number;
@@ -57,6 +81,7 @@ interface SlaThresholds {
   erlangPerSector: number;
 }
 
+/** Oblik odgovora API-ja: { success, data: [...], metrics, count, timestamp }. */
 interface ApiResponse {
   success: boolean;
   data: KpiCell[];
@@ -65,6 +90,7 @@ interface ApiResponse {
   timestamp: string;
 }
 
+/** Oblik greške API-ja. */
 export interface ApiError {
   success: boolean;
   error: string;
@@ -74,54 +100,53 @@ export interface ApiError {
 }
 
 // ============================================================================
-// Configuration
+// KONFIGURACIJA — čita se iz .env / Vite env varijabli (VITE_*)
 // ============================================================================
 
-// Load configuration from environment variables
+// import.meta.env su Vite-ove env varijable (iz .env fajla pored projekta)
 const metaEnv = (import.meta as any).env || {};
 const CONFIG = {
-  API_BASE_URL: metaEnv.VITE_API_BASE_URL ?? 'http://localhost:8080',
-  AUTO_REFRESH_INTERVAL: parseInt(metaEnv.VITE_AUTO_REFRESH_INTERVAL || '300000'),
-  USE_SSE: (metaEnv.VITE_SSE_ENABLED ?? 'true') === 'true',
-  SSE_PUSH_INTERVAL: parseInt(metaEnv.VITE_SSE_INTERVAL || '30'),
+  API_BASE_URL: metaEnv.VITE_API_BASE_URL ?? 'http://localhost:8080', // adresa backend-a
+  AUTO_REFRESH_INTERVAL: parseInt(metaEnv.VITE_AUTO_REFRESH_INTERVAL || '300000'), // polling ms (ako SSE isključen)
+  USE_SSE: (metaEnv.VITE_SSE_ENABLED ?? 'true') === 'true',  // live stream uključen?
+  SSE_PUSH_INTERVAL: parseInt(metaEnv.VITE_SSE_INTERVAL || '30'), // sekundi između SSE push-eva
 };
 
-// SLA Thresholds - configurable via environment or hardcoded defaults
+// SLA pragovi — vrednosti iznad/ispod njih dobijaju crveno/žuto/zeleno.
+// (U produkciji ih backend čita iz env-a; frontend ih koristi za bojenje.)
 const SLA: SlaThresholds = {
-  accessFailRate: 2.0,
-  dropRate: 1.5,
-  cellIntegrity: 97,
-  pdcchError: 3.0,
-  erlangPerSector: 40,
+  accessFailRate: 2.0,   // % — iznad = WARNING
+  dropRate: 1.5,         // % — iznad = WARNING
+  cellIntegrity: 97,     // % — ispod = WARNING
+  pdcchError: 3.0,       // % — iznad = WARNING
+  erlangPerSector: 40,   // Erl — iznad = upozorenje za opterećenje
 };
 
 // ============================================================================
-// Global State
+// GLOBALNO STANJE — promenljive koje žive dok je stranica otvorena
 // ============================================================================
 
-let kpiData: KpiCell[] = [];
-const charts: Record<string, Chart> = {};
-let autoRefreshInterval: number | null = null;
-let prevMetrics: KpiMetrics | null = null;
-let sseSource: EventSource | null = null;
-let networkMapModule: typeof import('./network-map') | null = null;
-let activeDomainFilter: NetworkDomain | null = null;
+let kpiData: KpiCell[] = [];                     // ← GLAVNI niz podataka (sve ćelije)
+const charts: Record<string, Chart> = {};        // Chart.js instance (za destroy/update)
+let autoRefreshInterval: number | null = null;   // polling timer (ako SSE isključen)
+let prevMetrics: KpiMetrics | null = null;       // prethodni snapshot (za delte ↑↓)
+let sseSource: EventSource | null = null;        // aktivna SSE veza
+let networkMapModule: typeof import('./network-map') | null = null; // lenjo učitana mapa
+let activeDomainFilter: NetworkDomain | null = null; // aktivan domen filter (null = svi)
 
-// ── NOC Monitoring State ──
-let soundEnabled = false;
-const nocStartTime = Date.now();
+// ── NOC panel stanje ──
+let soundEnabled = false;               // da li alarm zvuk (zvučni signal) radi
+const nocStartTime = Date.now();        // za "Uptime" brojač
 interface Alarm { id: string; severity: 'critical' | 'major'; text: string; time: Date; }
 interface Incident { id: string; title: string; status: 'active' | 'investigating' | 'resolved'; time: Date; meta: string; }
-let activeAlarms: Alarm[] = [];
-let recentIncidents: Incident[] = [];
+let activeAlarms: Alarm[] = [];         // trenutno aktivni alarmi (iz kpiData)
+let recentIncidents: Incident[] = [];   // izvedeni incidenti za timeline
 
 // ============================================================================
-// Utility Functions
+// UTILITETI — male pomoćne funkcije koje se koriste svuda
 // ============================================================================
 
-/**
- * Safe number conversion with fallback to 0
- */
+/** Pretvori bilo šta u broj; ako ne može (NaN/undefined/null) → 0. */
 function toNumber(value: any): number {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -145,23 +170,21 @@ function setText(elementId: string, value: string | number): void {
   }
 }
 
-/**
- * Pick a random item from an array
- */
+/** Uzme slučajan element iz niza (koristi ga generator mock podataka). */
 function pick<T>(items: T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-/**
- * Get selected hours from time range select
- */
+/** Pročita izabrani vremenski opseg iz dropdown-a (1h / 24h / 168h). */
 function getSelectedHours(): number {
   const select = document.getElementById('timeRange') as HTMLSelectElement;
   return Number(select?.value || 24);
 }
 
 /**
- * Normalize cell data - ensure all required fields are present
+ * Očisti i normalizuj jedan red podataka iz API-ja:
+ * sva polja moraju postojati i imati pravi tip (brojevi kao brojevi).
+ * Zove se pre SVAKOG korišćenja podataka — štiti od rušenja na lošim podacima.
  */
 function normalizeCell(cell: { [K in keyof KpiCell]?: KpiCell[K] | string }): KpiCell {
   return {
@@ -183,7 +206,8 @@ function normalizeCell(cell: { [K in keyof KpiCell]?: KpiCell[K] | string }): Kp
 }
 
 /**
- * Compute aggregated metrics from KPI data
+ * Izračunaj prosek svih ključnih KPI-jeva preko svih ćelija.
+ * Vraća null ako nema podataka. Koriste ga KPI kartice i delte.
  */
 function computeMetrics(data: KpiCell[] | null): KpiMetrics | null {
   if (!data || !data.length) return null;
@@ -200,11 +224,14 @@ function computeMetrics(data: KpiCell[] | null): KpiMetrics | null {
 }
 
 // ============================================================================
-// Cell Status Functions
+// STATUS ĆELIJE — bojenje po SLA pragovima
 // ============================================================================
 
 /**
- * Determine cell status based on KPI values
+ * Status jedne ćelije po pragovima:
+ *   BAD     → drop>3% ili accessFail>5% ili integritet<95%  (hard SLA prekršaj)
+ *   WARNING → bilo koji SLA prag iz CONFIG-a prekoračen
+ *   GOOD    → sve u granicama
  */
 function getCellStatus(c: KpiCell): 'GOOD' | 'WARNING' | 'BAD' {
   if (c.volteDropRate > 3 || c.volteAccessFailureRate > 5 || c.volteCellIntegrity < 95) return 'BAD';
@@ -213,7 +240,8 @@ function getCellStatus(c: KpiCell): 'GOOD' | 'WARNING' | 'BAD' {
 }
 
 /**
- * Get CSS class for KPI value based on thresholds
+ * Vrati CSS klasu boje za vrednost: 'kpi-good' / 'kpi-warning' / 'kpi-bad'.
+ * higherIsBetter=true za metrike gde je više bolje (npr. integritet).
  */
 function getKpiClass(value: number, goodThreshold: number, badThreshold: number, higherIsBetter: boolean = false): string | null {
   if (higherIsBetter) {
@@ -227,11 +255,13 @@ function getKpiClass(value: number, goodThreshold: number, badThreshold: number,
 }
 
 // ============================================================================
-// Delta Update Functions
+// DELTE — strelice ↑↓ pored KPI vrednosti (uporedba sa prethodnim snapshot-om)
 // ============================================================================
 
 /**
- * Update delta display for KPI changes
+ * Prikaži razliku između trenutne i prethodne vrednosti:
+ *   ↓ zeleno = popravilo se, ↑ crveno = pogoršalo, "-> 0" = isto.
+ * lowerIsBetter=true za metrike gde je pad dobra vest (drop, access fail).
  */
 function updateDelta(elementId: string, current: number, previous: number | null | undefined, lowerIsBetter: boolean = true): void {
   const element = document.getElementById(elementId);
@@ -257,12 +287,10 @@ function updateDelta(elementId: string, current: number, previous: number | null
 }
 
 // ============================================================================
-// Table Functions
+// TABELA — pretraga, filteri i render redova
 // ============================================================================
 
-/**
- * Append a cell to a table row
- */
+/** Dodaj jedan <td> u red (opciono sa CSS klasom boje i bold tekstom). */
 function appendCell(row: HTMLTableRowElement, value: string | number, className: string | null = null, strong: boolean = false): void {
   const td = document.createElement('td');
   if (className) td.className = className;
@@ -281,11 +309,17 @@ function appendCell(row: HTMLTableRowElement, value: string | number, className:
 /**
  * Update the KPI data table (search + critical-only filters applied)
  */
+// Stanje tablice: max redova (performanse), aktivna pretraga i filter kritičnih
 const MAX_TABLE_ROWS = 500;
 let tableSearch = '';
 let showOnlyCritical = false;
-let searchTimer: number | null = null;
+let searchTimer: number | null = null; // debounce za kucanje u pretragu
 
+/**
+ * Filtriraj ćelije po: aktivnom DOMENU, "samo kritično" i pretrazi.
+ * Pretraga gleda u celija/stanica/klaster (case-insensitive).
+ * Vraća max 500 redova — tabela ne sme da se zaglavi na hiljadama redova.
+ */
 function filterCells(cells: KpiCell[], query: string, showBadOnly: boolean): KpiCell[] {
   const q = query.trim().toLowerCase();
   return cells.filter(cell => {
@@ -298,10 +332,16 @@ function filterCells(cells: KpiCell[], query: string, showBadOnly: boolean): Kpi
   }).slice(0, MAX_TABLE_ROWS);
 }
 
+/** Skraćenica: filtriraj globalni kpiData trenutnim filterima. */
 function getFilteredCells(): KpiCell[] {
   return filterCells(kpiData, tableSearch, showOnlyCritical);
 }
 
+/**
+ * Iscrtaj tabelu iznova (briše sve <tr> pa dodaje nove).
+ * Svaki red dobija data-stanica i data-celija atribute —
+ * klik delegat (u setupEventListeners) preko njih otvara drawer.
+ */
 function updateTable(): void {
   const tbody = document.getElementById('tableBody');
   if (!tbody) return;
@@ -341,9 +381,10 @@ function updateTable(): void {
 }
 
 // ============================================================================
-// Chart Functions
+// GRAFIKONI (Chart.js) — 4 grafikona ispod mape
 // ============================================================================
 
+// Zajednički izgled tooltip-a za sve grafikone (tamna kartica)
 const chartTooltip = {
   backgroundColor: '#2a2f3a',
   titleColor: '#ffffff',
@@ -354,6 +395,7 @@ const chartTooltip = {
   cornerRadius: 4,
 };
 
+/** Zajedničke opcije: bez legende, tamna mreža, opciono max na Y osi. */
 function chartOptions({ max = null as number | null, tooltip = chartTooltip as any } = {}): ChartOptions {
   return {
     responsive: true,
@@ -374,6 +416,7 @@ function chartOptions({ max = null as number | null, tooltip = chartTooltip as a
   };
 }
 
+/** Opciona podešavanja Chart.js grafikona (koristi je chartOptions). */
 interface ChartOptions {
   responsive?: boolean;
   maintainAspectRatio?: boolean;
@@ -381,6 +424,7 @@ interface ChartOptions {
   scales?: any;
 }
 
+/** Grafikon 1: Access Fail Rate trend — linija, prva 10 ćelija, crveni poeni iznad SLA. */
 function updateAccessFailChart(): void {
   const ctx = document.getElementById('accessFailChart') as HTMLCanvasElement;
   if (!ctx) return;
@@ -410,6 +454,7 @@ function updateAccessFailChart(): void {
   });
 }
 
+/** Grafikon 2: Drop Rate po ćeliji — stubići, boja po težini (crveno>3%, žuto>SLA). */
 function updateDropRateChart(): void {
   const ctx = document.getElementById('dropRateChart') as HTMLCanvasElement;
   if (!ctx) return;
@@ -434,6 +479,7 @@ function updateDropRateChart(): void {
   });
 }
 
+/** Grafikon 3: Integritet — kroasan (doughnut) sa raspodelom Good/Warning/Bad. */
 function updateIntegrityChart(): void {
   const ctx = document.getElementById('integrityChart') as HTMLCanvasElement;
   if (!ctx) return;
@@ -471,6 +517,7 @@ function updateIntegrityChart(): void {
   });
 }
 
+/** Grafikon 4: Erlang opterećenje — stubići, žuto iznad SLA pragopterećenja. */
 function updateErlangChart(): void {
   const ctx = document.getElementById('erlangChart') as HTMLCanvasElement;
   if (!ctx) return;
@@ -502,6 +549,7 @@ function updateErlangChart(): void {
   });
 }
 
+/** Osveži sva 4 grafikona odjednom (zove updateDashboard posle svakog snapshot-a). */
 function updateCharts(): void {
   updateAccessFailChart();
   updateDropRateChart();
@@ -510,11 +558,13 @@ function updateCharts(): void {
 }
 
 // ============================================================================
-// Data Loading Functions
+// PODACI — dohvat sa API-ja + mock fallback
 // ============================================================================
 
 /**
- * Generate mock data for testing (fallback when API is not available)
+ * Generiši lažne KPI podatke kad backend ne radi (dev režim / API pao).
+ * ~12% ćelija je "loše" da bi alarmi i boje imali smisla na ekranu.
+ * VAŽNO: crveni LIVE badge uvek upozorava da su podaci mock.
  */
 function generateMockData(hours: number = 24): KpiCell[] {
   const data: KpiCell[] = [];
@@ -548,7 +598,8 @@ function generateMockData(hours: number = 24): KpiCell[] {
 }
 
 /**
- * Fetch KPI data from API
+ * Zovi backend: GET {API}/api/kpis?hours=N
+ * Prihvata i oblik { data: [...] } i gol niz [...]. Baca grešku na loš odgovor.
  */
 async function fetchKpiData(): Promise<KpiCell[]> {
   const hours = getSelectedHours();
@@ -587,7 +638,10 @@ async function fetchKpiData(): Promise<KpiCell[]> {
 }
 
 /**
- * Load KPI data (with fallback to mock data)
+ * GLAVNA FUNKCIJA ZA PODATKE — zove se pri startu, na Refresh dugme i na promenu opsega.
+ * Uspeh  → kpiData = API odgovor → updateDashboard()
+ * Pad    → kpiData = mock podaci → crveni LIVE badge + toast upozorenje
+ * prevMetrics se pamti PRE dohvata da delte ↑↓ porede staro i novo stanje.
  */
 async function loadData(): Promise<void> {
   try {
@@ -606,24 +660,27 @@ async function loadData(): Promise<void> {
 }
 
 /**
- * Update the entire dashboard
+ * CENTRALNA FUNKCIJA RENDER-A — poziva se posle SVAKOG novog snapshot-a
+ * (prvo učitavanje, Refresh dugme, SSE push). Redosled je bitan:
+ * normalizuj → metriku → kartice → domeni → tabela → grafikoni → mapa → NOC.
  */
 function updateDashboard(): void {
-  kpiData = kpiData.map(normalizeCell);
+  kpiData = kpiData.map(normalizeCell); // garantuj tipove pre bilo kog korišćenja
   const curr = computeMetrics(kpiData);
-  
-  updateSummaryCards(curr);
-  renderDomainCards();
-  updateTable();
-  updateCharts();
-  networkMapModule?.updateNetworkMap?.(kpiData);
-  updateNocPanel(curr);
+
+  updateSummaryCards(curr);   // 1. gornjih 5 kartica + delte
+  renderDomainCards();        // 2. RAN/IMS/Transport/Core kartice + sparkline
+  updateTable();              // 3. tabela (poštuje domen filter)
+  updateCharts();             // 4. 4 Chart.js grafikona
+  networkMapModule?.updateNetworkMap?.(kpiData); // 5. boje na mapi (ako je mapa učitana)
+  updateNocPanel(curr);       // 6. health ring, SLA, alarmi, incidenti
 }
 
 // ============================================================================
-// NOC Monitoring Panel
+// NOC PANEL — health ring, SLA bar, alarmi, incidenti, uptime
 // ============================================================================
 
+/** Orkestrira sve pod-funkcije NOC panela (zove updateDashboard). */
 function updateNocPanel(curr: KpiMetrics | null): void {
   if (!curr) return;
   updateHealthRing(curr);
@@ -633,6 +690,11 @@ function updateNocPanel(curr: KpiMetrics | null): void {
   updateUptime();
 }
 
+/**
+ * Zdravstveni krug (0-100) — ponderisana ocena mreže:
+ * 30% drop + 30% access fail + 40% integritet.
+ * <70 = crveno, <90 = žuto, inače zeleno. Animira stroke SVG kruga.
+ */
 function updateHealthRing(curr: KpiMetrics): void {
   const dropScore = Math.max(0, 100 - (curr.dropRate / SLA.dropRate) * 50);
   const accessScore = Math.max(0, 100 - (curr.accessFailRate / SLA.accessFailRate) * 50);
@@ -653,6 +715,10 @@ function updateHealthRing(curr: KpiMetrics): void {
   }
 }
 
+/**
+ * SLA compliance bar: % ćelija koje su u skladu sa SVIM pragovima.
+ * <95% = crveno, <99.5% = žuto, inače zeleno. Cilj firme: 99.5%.
+ */
 function updateSlaBar(_curr: KpiMetrics): void {
   const compliant = kpiData.filter(c =>
     c.volteDropRate <= SLA.dropRate &&
@@ -677,6 +743,13 @@ function updateSlaBar(_curr: KpiMetrics): void {
   }
 }
 
+/**
+ * Izračunaj aktivne alarme iz kpiData:
+ *   critical → drop ili access fail PREKO 2× SLA praga
+ *   major    → integritet ispod 95%
+ * Ako je broj alarma porastao i zvuk je uključen → pusti zvučni signal.
+ * Prikazuje max 8 najnovijih u NOC panelu.
+ */
 function updateAlarms(): void {
   const prevAlarmCount = activeAlarms.length;
   activeAlarms = [];
@@ -717,6 +790,11 @@ function updateAlarms(): void {
   `).join('');
 }
 
+/**
+ * Izvedi "incidente" iz alarmâ (grupisani prikaz za timeline):
+ * critical alarmi → 1 aktivan incident; major alarmi → investigating;
+ * nema alarma → "All systems nominal" (rešeno).
+ */
 function updateIncidents(): void {
   const now = new Date();
   const criticalAlarms = activeAlarms.filter(a => a.severity === 'critical');
@@ -765,6 +843,7 @@ function updateIncidents(): void {
   `).join('');
 }
 
+/** Brojač "Uptime: Xh Ym Zs" — koliko dugo je stranica otvorena; dot boji po alarmima. */
 function updateUptime(): void {
   const elapsed = Date.now() - nocStartTime;
   const hours = Math.floor(elapsed / 3600000);
@@ -781,6 +860,7 @@ function updateUptime(): void {
   }
 }
 
+/** Kratak zvučni signal (880 Hz, 0.4s) kad stigne novi kritični alarm. */
 function playAlarmSound(): void {
   try {
     const ctx = new AudioContext();
@@ -800,22 +880,25 @@ function playAlarmSound(): void {
 
 
 // ============================================================================
-// Mrežni domeni — RAN / IMS / Transport / Core
+// MREŽNI DOMENI — RAN / IMS / Transport / Core (4 kartice + sparkline)
 // ============================================================================
 
+/** Statistika jednog domena za karticu: dostupnost %, broj elemenata i alarma. */
 interface DomainStat {
   id: NetworkDomain;
-  availability: number;
-  elements: number;
-  alarms: number;
+  availability: number; // % elemenata u skladu sa SLA
+  elements: number;     // koliko elemenata domen ima (ćelije ili linkovi)
+  alarms: number;       // koliko ih je u BAD stanju
 }
 
+/** Da li je ćelija u skladu sa SVIM SLA pragovima (za računanje dostupnosti). */
 function cellCompliant(c: KpiCell): boolean {
   return c.volteDropRate <= SLA.dropRate &&
     c.volteAccessFailureRate <= SLA.accessFailRate &&
     c.volteCellIntegrity >= SLA.cellIntegrity;
 }
 
+/** Hex boja za status tekst (koristi je meter bar u drawer-u). */
 function statusHex(st: string): string {
   if (st === 'GOOD') return '#10b981';
   if (st === 'WARNING') return '#f59e0b';
@@ -823,6 +906,13 @@ function statusHex(st: string): string {
   return '#6b7280';
 }
 
+/**
+ * Izračunaj statistiku sva 4 domena iz trenutnog kpiData:
+ *  - RAN       → sve ćelije OSIM hab stanica (habovi idu u Core)
+ *  - IMS       → glas: gleda samo drop rate i integritet
+ *  - Transport → linkovi sa mape (statusi dolaze iz network-map modula)
+ *  - Core      → samo ćelije hab stanica (BGD_CEN_001, NS_001, KG_001)
+ */
 function computeDomainStats(): DomainStat[] {
   const cells = kpiData.map(normalizeCell);
   const linkStatuses = networkMapModule?.getLinkStatuses?.() ?? {};
@@ -841,6 +931,7 @@ function computeDomainStats(): DomainStat[] {
   ];
 }
 
+/** CSS klasa boje za procenat dostupnosti: ≥95% zeleno, ≥85% žuto, ispod crveno. */
 function availClass(v: number): string {
   if (!Number.isFinite(v)) return 'kpi-warning';
   if (v >= 95) return 'kpi-good';
@@ -848,28 +939,76 @@ function availClass(v: number): string {
   return 'kpi-bad';
 }
 
+/** Rolling timeline dostupnosti po domenu — hrani sparkline u karticama.
+ *  Puni se pri svakom updateDashboard-u; čuva poslednjih 24 vrednosti. */
+const domainHistory: Record<NetworkDomain, number[]> = { ran: [], ims: [], transport: [], core: [] };
+
+/** Dodaj novu vrednost u historiju (max 24 — starije se odbacuju). */
+function pushDomainHistory(stats: DomainStat[]): void {
+  stats.forEach(s => {
+    const arr = domainHistory[s.id];
+    arr.push(Number(s.availability.toFixed(1)));
+    if (arr.length > 24) arr.shift();
+  });
+}
+
+/**
+ * Nacrtaj mini SVG sparkline iz niza vrednosti (0-100%).
+ * Namerno BEZ Chart.js instance — 4 karte × Chart.js bi bilo sporo.
+ * Tačkica na kraju linije pulsira (SVG <animate>).
+ */
+function sparklineSvg(points: number[], color: string): string {
+  const pts = points.length > 1 ? points : [points[0] ?? 100, points[0] ?? 100];
+  const min = Math.min(...pts, 88);
+  const max = Math.max(...pts, 101);
+  const range = Math.max(0.001, max - min);
+  const step = 100 / (pts.length - 1);
+  const coords = pts.map((v, i) =>
+    `${(i * step).toFixed(1)},${(25 - ((v - min) / range) * 20).toFixed(1)}`
+  );
+  const last = coords[coords.length - 1].split(',');
+  return `<svg class="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
+    <polyline fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" points="${coords.join(' ')}"/>
+    <circle cx="${last[0]}" cy="${last[1]}" r="2" fill="${color}">
+      <animate attributeName="opacity" values="1;.3;1" dur="1.6s" repeatCount="indefinite"/>
+    </circle>
+  </svg>`;
+}
+
+/**
+ * Iscrtaj 4 domeni kartice iznova (zove updateDashboard).
+ * Svaka kartica: kratko ime + dostupnost% + opis + sparkline + broj alarma.
+ * Klik na karticu → toggleDomainFilter (filter tablice + drawer domena).
+ * Ako domen ima alarme dobija klasu has-critical → CSS "munja" flicker.
+ */
 function renderDomainCards(): void {
   const grid = document.getElementById('domainGrid');
   if (!grid) return;
   grid.replaceChildren();
 
-  computeDomainStats().forEach(stat => {
+  const stats = computeDomainStats();
+  pushDomainHistory(stats);
+
+  stats.forEach(stat => {
     const meta = DOMAIN_META[stat.id];
     const card = document.createElement('article');
-    card.className = 'domain-card' + (activeDomainFilter === stat.id ? ' active' : '');
+    card.className = 'domain-card' + (activeDomainFilter === stat.id ? ' active' : '') + (stat.alarms ? ' has-critical' : '');
     card.style.setProperty('--dc', meta.color);
     card.dataset.domain = stat.id;
 
     const availText = stat.elements ? `${stat.availability.toFixed(1)}%` : '—';
     card.innerHTML = `
-      <div class="domain-head">
+      <div class="domain-top">
         <span class="domain-name">${meta.shortName}</span>
         <span class="domain-avail ${availClass(stat.availability)}">${availText}</span>
       </div>
-      <div class="domain-desc">${meta.description}</div>
+      <div class="domain-mid">
+        <span class="domain-desc">${meta.description}</span>
+        ${sparklineSvg(domainHistory[stat.id], meta.color)}
+      </div>
       <div class="domain-meta-row">
         <span>${stat.elements} elem.</span>
-        <span class="${stat.alarms ? 'kpi-bad' : ''}">${stat.alarms} alarma</span>
+        <span class="${stat.alarms ? 'kpi-bad' : ''}">${stat.alarms} alarm</span>
       </div>`;
 
     card.addEventListener('click', () => toggleDomainFilter(stat.id));
@@ -877,6 +1016,7 @@ function renderDomainCards(): void {
   });
 }
 
+/** Sinhronizuj active klasu na sidebar stavkama (Dashboard ili neki domen). */
 function syncDomainNav(): void {
   document.querySelectorAll<HTMLButtonElement>('.nav-item').forEach(btn => {
     const nav = btn.dataset.nav ?? '';
@@ -887,6 +1027,10 @@ function syncDomainNav(): void {
   });
 }
 
+/**
+ * Uključi/isključi domen filter (klik na istu karticu = isključi).
+ * Menja: sidebar highlight, kartice, tabelu; otvara drawer domena.
+ */
 function toggleDomainFilter(d: NetworkDomain): void {
   activeDomainFilter = activeDomainFilter === d ? null : d;
   syncDomainNav();
@@ -896,9 +1040,17 @@ function toggleDomainFilter(d: NetworkDomain): void {
 }
 
 // ============================================================================
-// DETAIL DRAWER — desni panel sa detaljima (ćelija / stanica / region / domen)
+// DETAIL DRAWER — desni panel sa detaljima (ćelija / stanica / okrug / domen)
+//
+// Jedan generički drawer, 4 renderera koji pune njegov sadržaj HTML-om:
+//   openCellDrawer    ← klik na red tablice ili ćeliju u nekom drawer-u
+//   openStationDrawer ← klik na marker na mapi ili stanicu u drawer-u
+//   openRegionDrawer  ← klik na okrug na mapi
+//   openDomainDrawer  ← klik na domeni karticu ili sidebar stavku
+// Zatvaranje: × dugme, ESC, klik na backdrop (sve veže setupEventListeners).
 // ============================================================================
 
+// Pristup DOM elementima drawera (funkcije da ne traže pre nego što treba)
 const drawerEl = (): HTMLElement | null => document.getElementById('detailDrawer');
 const drawerBodyEl = (): HTMLElement | null => document.getElementById('drawerBody');
 
@@ -909,6 +1061,7 @@ function esc(v: unknown): string {
   );
 }
 
+/** Otvori drawer: naslov + podnaslov + akcentna boja; skroluje sadržaj na vrh. */
 function openDrawer(title: string, subtitleHtml: string, accent?: string): void {
   const d = drawerEl();
   if (!d) return;
@@ -922,16 +1075,22 @@ function openDrawer(title: string, subtitleHtml: string, accent?: string): void 
   drawerBodyEl()?.scrollTo({ top: 0 });
 }
 
+/** Zatvori drawer i skini backdrop. */
 function closeDrawer(): void {
   drawerEl()?.classList.remove('open');
   drawerEl()?.setAttribute('aria-hidden', 'true');
   document.getElementById('drawerBackdrop')?.classList.remove('show');
 }
 
+/** HTML jedne metrike (kvadratić sa labelom i vrednošću) u drawer-u. */
 function metricTile(k: string, v: string, cls = ''): string {
   return `<div class="metric-tile"><span class="metric-k">${esc(k)}</span><span class="metric-v ${cls}">${v}</span></div>`;
 }
 
+/**
+ * Red sa progress bar-om: vrednost vs SLA prag.
+ * Širina bara = vrednost / (2× prag), boja po getKpiClass.
+ */
 function meterRow(label: string, value: number, slaValue: number, higherIsBetter: boolean): string {
   const cls = getKpiClass(value, slaValue, higherIsBetter ? slaValue - 2 : slaValue * 2, higherIsBetter) ?? '';
   const span = higherIsBetter ? Math.max(slaValue, 100.01) : slaValue * 2;
@@ -943,6 +1102,11 @@ function meterRow(label: string, value: number, slaValue: number, higherIsBetter
     </div>`;
 }
 
+/**
+ * Klikabilan red u drawer listi (ćelija / stanica / link).
+ * dataAttr sadrži data-cell ili data-station-drawer — preko njega
+ * delegirani klik zna šta da otvori dalje (drill-down lanac).
+ */
 function listRow(dataAttr: string, key: string, main: string, sub: string, value: string, st: string): string {
   return `
     <div class="list-row" ${dataAttr}>
@@ -953,6 +1117,7 @@ function listRow(dataAttr: string, key: string, main: string, sub: string, value
     </div>`;
 }
 
+/** DRAWER 1: Detalji jedne ĆELIJE — status badge, 3 meter-a vs SLA, svih 12 KPI-ja. */
 function openCellDrawer(cell: KpiCell): void {
   const body = drawerBodyEl();
   if (!body) return;
@@ -994,6 +1159,7 @@ function openCellDrawer(cell: KpiCell): void {
   openDrawer(cell.celija, `${esc(cell.klaster)} &middot; ${esc(cell.stanica)} &middot; ${esc(cell.band)} MHz`);
 }
 
+/** Najgori status u grupi ćelija (stanice/okruga/domene) — lanac najslabije karike. */
 function worstCellStatus(cells: KpiCell[]): string {
   let worst = 'UNKNOWN';
   for (const c of cells) {
@@ -1005,6 +1171,7 @@ function worstCellStatus(cells: KpiCell[]): string {
   return worst;
 }
 
+/** DRAWER 2: Detalji STANICE — status, koordinate, prosek KPI, lista njenih ćelija (klikabilna). */
 function openStationDrawer(stationId: string): void {
   const station = NETWORK_STATIONS.find(s => s.id === stationId);
   const body = drawerBodyEl();
@@ -1051,6 +1218,7 @@ function openStationDrawer(stationId: string): void {
   openDrawer(station.name, `${esc(station.id)} &middot; ${esc(station.cluster)} &middot; okrug ${esc(DISTRICT_META[station.region]?.name ?? station.region)}`, domain.color);
 }
 
+/** DRAWER 3: Detalji OKRUGA — dostupnost okruga + sve stanice u njemu (klikabilne). */
 function openRegionDrawer(regionId: string): void {
   const body = drawerBodyEl();
   if (!body) return;
@@ -1089,6 +1257,11 @@ function openRegionDrawer(regionId: string): void {
   openDrawer(meta?.name ?? regionId, `${esc(meta?.centerCity ?? '')} &middot; ${esc(meta?.macroRegion ?? '')}`, '#38bdf8');
 }
 
+/**
+ * DRAWER 4: Detalji DOMENA.
+ *  - transport → spisak SVIH linkova sa statusima (iz network-map modula)
+ *  - ostali    → 6 najgorih ćelija po drop rate-u (klikabilne → ćelija drawer)
+ */
 function openDomainDrawer(domainId: NetworkDomain): void {
   const body = drawerBodyEl();
   if (!body) return;
@@ -1134,6 +1307,15 @@ function openDomainDrawer(domainId: NetworkDomain): void {
   openDrawer(meta.name, esc(meta.description), meta.color);
 }
 
+/**
+ * RUTER SIDEBAR NAVIGACIJE — poziva je klik na bilo koju .nav-item stavku.
+ *  overview  → reset domena + scroll na vrh
+ *  map       → skrol do mape
+ *  alarms    → uključi "samo kritično" + skrol do NOC panela
+ *  sla       → skrol do SLA sekcije
+ *  domain-X  → toggle filter domena X + skrol do kartica
+ * Na kraju uvek zatvori mobilni sidebar.
+ */
 function handleNavAction(action: string): void {
   if (action === 'overview') {
     activeDomainFilter = null;
@@ -1158,9 +1340,7 @@ function handleNavAction(action: string): void {
   document.getElementById('appShell')?.classList.remove('sidebar-open');
 }
 
-/**
- * Update summary cards with current metrics
- */
+/** Gornjih 5 KPI kartica: vrednosti + delte ↑↓ u odnosu na prethodni snapshot. */
 function updateSummaryCards(curr: KpiMetrics | null): void {
   if (!curr) return;
   
@@ -1176,9 +1356,7 @@ function updateSummaryCards(curr: KpiMetrics | null): void {
   updateDelta('deltaErlang', curr.erlang, prevMetrics?.erlang, false);
 }
 
-/**
- * Apply a full KPI response payload to the dashboard
- */
+/** Primeni payload sa SSE stream-a (isti oblik kao API odgovor) → updateDashboard. */
 function applyKpiPayload(payload: ApiResponse): void {
   const rows = Array.isArray(payload) ? payload : payload.data;
   if (!Array.isArray(rows)) return;
@@ -1187,8 +1365,8 @@ function applyKpiPayload(payload: ApiResponse): void {
 }
 
 /**
- * Start auto-refresh. Prefers SSE push; falls back to polling
- * when SSE is disabled or unsupported by the browser.
+ * Pokreni automatsko osvežavanje: PREFERIRA SSE (live push svakih ~30s),
+ * a ako SSE nije moguć → klasičan polling na AUTO_REFRESH_INTERVAL (5 min).
  */
 function startAutoRefresh(): void {
   stopAutoRefresh();
@@ -1204,7 +1382,10 @@ function startAutoRefresh(): void {
 }
 
 /**
- * Connect (or reconnect) the SSE stream for the currently selected time range
+ * Otvori SSE (Server-Sent Events) vezu sa backend-om — LIVE režim.
+ * Backend svakih SSE_PUSH_INTERVAL sekundi gura 'kpis' event sa punim
+ * snapshot-om → mi ga primenimo kroz applyKpiPayload.
+ * 'error' event ne ruši ništa — browser SAM pokušava reconnect.
  */
 function connectSse(): void {
   disconnectSse();
@@ -1238,9 +1419,7 @@ function connectSse(): void {
   });
 }
 
-/**
- * Close the SSE stream if open
- */
+/** Zatvori SSE vezu ako je otvorena (pre ponovnog povezivanja / gašenja). */
 function disconnectSse(): void {
   if (sseSource) {
     sseSource.close();
@@ -1248,9 +1427,7 @@ function disconnectSse(): void {
   }
 }
 
-/**
- * Stop auto-refresh
- */
+/** Zaustavi SVE automatsko osvežavanje (SSE + polling timer). */
 function stopAutoRefresh(): void {
   disconnectSse();
   if (autoRefreshInterval) {
@@ -1260,14 +1437,12 @@ function stopAutoRefresh(): void {
 }
 
 // ============================================================================
-// UX Helpers (theme, toast, live badge, lazy map loading)
+// UX POMOĆNICI — tema, toast notifikacije, LIVE badge, lenjo učitavanje mape
 // ============================================================================
 
-const THEME_KEY = 'volte-theme';
+const THEME_KEY = 'volte-theme'; // ključ u localStorage gde se čuva izbor teme
 
-/**
- * Resolve the initial theme: saved preference, then env, then OS setting
- */
+/** Početna tema: prvo sačuvan izbor, pa env varijabla, pa podešavanje OS-a. */
 function getInitialTheme(): 'dark' | 'light' {
   try {
     const saved = localStorage.getItem(THEME_KEY);
@@ -1281,25 +1456,19 @@ function getInitialTheme(): 'dark' | 'light' {
   return 'dark';
 }
 
-/**
- * Apply a theme to the document
- */
+/** Primeni temu na <html data-theme="..."> i promeni ikonicu dugmeta. */
 function applyTheme(theme: 'dark' | 'light'): void {
   document.documentElement.dataset.theme = theme;
   const btn = document.getElementById('themeToggle');
   if (btn) btn.textContent = theme === 'light' ? '☀' : '☾';
 }
 
-/**
- * Initialize the theme on startup
- */
+/** Postavi temu pri startu (zove boot sekvenca u DOMContentLoaded). */
 function initTheme(): void {
   applyTheme(getInitialTheme());
 }
 
-/**
- * Toggle between light and dark theme (persisted)
- */
+/** Prebaci tamna↔svetla tema i sačuvaj izbor u localStorage. */
 function toggleTheme(): void {
   const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
   try {
@@ -1309,7 +1478,8 @@ function toggleTheme(): void {
 }
 
 /**
- * Show a transient toast notification
+ * Kratka notifikacija u donjem desnom uglu (uspeh / greška / info).
+ * Samo nestaje posle `duration` ms — ne traži klik.
  */
 function showToast(message: string, type: 'info' | 'error' | 'success' = 'info', duration = 3500): void {
   const container = document.getElementById('toastContainer');
@@ -1325,7 +1495,8 @@ function showToast(message: string, type: 'info' | 'error' | 'success' = 'info',
 }
 
 /**
- * Update the LIVE badge state
+ * LIVE bedž u top baru: zelen (SSE radi), crven (API pao / mock podaci),
+ * siv (podaci učitani jednom, bez live veze).
  */
 function setLiveBadge(state: 'muted' | 'live' | 'bad'): void {
   const badge = document.getElementById('liveBadge');
@@ -1357,12 +1528,10 @@ async function loadNetworkMap(): Promise<void> {
 }
 
 // ============================================================================
-// CSV Export Function
+// CSV EXPORT — preuzmi sve ćelije kao Excel-kompatibilan fajl
 // ============================================================================
 
-/**
- * Escape CSV field value
- */
+/** Escapuj jednu vrednost za CSV (zarez, navodnik, novi red → pod navodnike). */
 function escapeCsvField(value: any): string {
   const text = String(value ?? '');
   if (/[",\r\n]/.test(text)) {
@@ -1372,7 +1541,8 @@ function escapeCsvField(value: any): string {
 }
 
 /**
- * Export data to CSV
+ * Skini sve KPI podatke kao CSV (dugme "Export CSV" ili Ctrl+E).
+ * \uFEFF na početku = BOM marker da Excel pravilno otvori UTF-8 znakove.
  */
 function exportCSV(): void {
   const headers = ['Klaster', 'Stanica', 'Celija', 'Band', 'AccessFailRate', 'DropRate',
@@ -1405,9 +1575,18 @@ function exportCSV(): void {
 }
 
 // ============================================================================
-// Event Listeners Setup
+// EVENT LISTENERI — ovde se vežu SVI klikovi/tastatura (zove boot sekvenca)
 // ============================================================================
 
+/**
+ * Poveži sav interfejs sa logikom. Deli se na blokove:
+ *  1. Toolbar (Refresh, vremenski opseg, pretraga, filteri, tema, CSV, zvuk)
+ *  2. Sidebar navigacija + mobilni hamburger
+ *  3. Detail drawer (zatvaranje + delegirani klikovi za drill-down)
+ *  4. Tabela (klik na red → drawer ćelije)
+ *  5. Eventi sa mape (noc:station-click / noc:region-click)
+ *  6. Tastatura (Ctrl+R refresh, Ctrl+E export, ESC zatvara drawer/sidebar)
+ */
 function setupEventListeners(): void {
   const refreshBtn = document.getElementById('refreshBtn');
   const timeRange = document.getElementById('timeRange') as HTMLSelectElement;
@@ -1528,14 +1707,23 @@ function setupEventListeners(): void {
 }
 
 // ============================================================================
-// Initialization
+// INICIJALIZACIJA — BOOT SEKVENCA (ulazna tačka cele aplikacije)
 // ============================================================================
 
+/**
+ * Pokreće se kad je DOM spreman. Redosled je bitan:
+ *  1. setupEventListeners() — sve interakcije vezane PRE prvog rendera
+ *  2. initTheme()           — tema pre iscrtavanja (bez treperenja)
+ *  3. loadData()            — prvi podaci (API ili mock) → updateDashboard
+ *  4. startAutoRefresh()    — SSE live stream (ili polling)
+ *  5. loadNetworkMap()      — mapa lenjo, NE blokira prvi render
+ *  6. uptime tajmer         — NOC brojač na svaku sekundu
+ */
 document.addEventListener('DOMContentLoaded', () => {
   console.log('VoLTE KPI Dashboard initialized');
   console.log(`API Base URL: ${CONFIG.API_BASE_URL}`);
   console.log(`Auto-refresh interval: ${CONFIG.AUTO_REFRESH_INTERVAL}ms`);
-  
+
   setupEventListeners();
   initTheme();
   loadData();
@@ -1546,14 +1734,14 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(updateUptime, 1000);
 });
 
-// Cleanup on page unload
+/** Čišćenje pri zatvaranju stranice: prekini vezu, uništi grafikone. */
 window.addEventListener('beforeunload', () => {
   stopAutoRefresh();
   Object.values(charts).forEach(chart => chart.destroy());
 });
 
 // ============================================================================
-// Exports (for testing)
+// EKSPORTI — javlja samo za testove (vitest ih importuje); app ih ne koristi
 // ============================================================================
 
 export {

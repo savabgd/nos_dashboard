@@ -1,40 +1,64 @@
 /**
- * Static network topology data (stations, links, districts).
- * Kept free of Leaflet so it can be imported statically by the main app
- * bundle without pulling in the entire map library.
+ * ============================================================
+ * stations.ts — STATIČNI PODACI MREŽE (topologija + metapodaci)
+ * ============================================================
+ *
+ * Ovaj fajl sadrži SVE što se ne menja tokom rada programa:
+ *  - tipove koji opisuju podatke (StationStatus, MapStation, MapLink...)
+ *  - spisak svih baznih stanica sa koordinatama
+ *  - spisak svih linkova između stanica (fiber / mikrovalna / backhaul)
+ *  - metapodatke o 30 okruga Srbije (imena, centri, boje)
+ *  - definicije mrežnih domena (RAN / IMS / Transport / Core)
+ *
+ * NAMERNO NE sadrži Leaflet niti bilo koju biblioteku — čist TypeScript,
+ * da ga app.ts može učitati bez povlačenja cele mape (brži prvi render).
+ *
+ * Geometija okruga (pravi oblici na mapi) se NE čuva ovde — učitava se
+ * u runtime-u iz /serbia-districts.geojson (vidi network-map.ts).
  */
 
+/**
+ * Mogući statusi jednog elementa mreže.
+ * - GOOD     → sve u granicama SLA (zeleno)
+ * - WARNING  → blago odbačanje od praga (žuto)
+ * - BAD      → kritično, SLA prekoračen (crveno)
+ * - UNKNOWN  → nema podataka za element (sivo)
+ */
 export type StationStatus = 'GOOD' | 'WARNING' | 'BAD' | 'UNKNOWN';
 
+/** Jedna bazna stanica (eNodeB) — pozicija na mapi + pripadnost okrugu. */
 export interface MapStation {
-  id: string;
-  name: string;
-  cluster: string;
-  region: string;
-  lat: number;
-  lon: number;
+  id: string;      // jedinstveni ID, npr. "BGD_CEN_001"
+  name: string;    // ime za prikaz, npr. "Beograd Centar"
+  cluster: string; // klaster (grupa stanica, npr. "CENTAR_BGD")
+  region: string;  // ID okruga — ključ u DISTRICT_META mapi ispod
+  lat: number;     // geografska širina (za Leaflet marker)
+  lon: number;     // geografska dužina
 }
 
+/** Link između dve stanice (transportna mreža). */
 export interface MapLink {
-  from: string;
-  to: string;
-  type: 'fiber' | 'mw' | 'backhaul';
-  label?: string;
+  from: string;  // ID stanice-pošiljaoca
+  to: string;    // ID stanice-primaoca
+  type: 'fiber' | 'mw' | 'backhaul'; // vrsta veze: optika / mikrovalna / glavni backbone
+  label?: string; // kapacitet za prikaz, npr. "10G", "100G"
 }
 
+/** Minimalni oblik KPI reda koji mapa treba (ne mora cela ćelija iz API-ja). */
 export interface KpiCellLike {
-  stanica: string;
-  klaster: string;
-  volteDropRate: number;
-  volteAccessFailureRate: number;
-  volteCellIntegrity: number;
+  stanica: string;                 // ID stanice kojoj ćelija pripada
+  klaster: string;                 // klaster ćelije
+  volteDropRate: number;           // stopa otpuštenih VoLTE poziva (%)
+  volteAccessFailureRate: number;  // stopa neuspešnih uspostavljanja (%)
+  volteCellIntegrity: number;      // integritet ćelije (%)
 }
 
+/** Metapodaci jednog okruga — ime, region, administrativni centar, boja ispune. */
 export interface DistrictMeta {
-  name: string;
-  macroRegion: string;
-  centerCity: string;
-  fill: string;
+  name: string;        // puno ime, npr. "Južnobački okrug"
+  macroRegion: string; // makroregion ("Vojvodina", "Beograd"...)
+  centerCity: string;  // administrativni centar
+  fill: string;        // boja ispune na mapi (hex)
 }
 
 /**
@@ -75,6 +99,11 @@ export const DISTRICT_META: Record<string, DistrictMeta> = {
   kosovskopomoravski: { name: 'Kosovskopomoravski okrug', macroRegion: 'Kosovo i Metohija', centerCity: 'Gnjilane', fill: '#8b5cf6' },
 };
 
+/**
+ * Sve 32 bazne stanice u mreži, grupisane po regionima (komentari između
+ * redova su samo vizuelne grupe). Koordinate su realne (gradski centri).
+ * region = ključ u DISTRICT_META — veza stanica ↔ okrug na mapi.
+ */
 export const NETWORK_STATIONS: MapStation[] = [
   // Beograd
   { id: 'BGD_CEN_001', name: 'Beograd Centar', cluster: 'CENTAR_BGD', region: 'beograd', lat: 44.8176, lon: 20.4633 },
@@ -122,17 +151,28 @@ export const NETWORK_STATIONS: MapStation[] = [
 ];
 
 // ── Mrežni domeni (kao kod velikih operatera) ────────────────────────
+// Domen = logički sloj mreže. Dashboard ih prikazuje kao 4 kartice:
+// svaka ima svoju dostupnost, broj elemenata i alarme.
 
+/**
+ * ID-jevi četiri domena:
+ * - ran       → radio pristup (bazne stanice i ćelije)
+ * - ims       → VoLTE glas (QCI-1 nosioci)
+ * - transport → backhaul linkovi (fiber/mikrovalna)
+ * - core      → EPC jezgro (hab čvorišta)
+ */
 export type NetworkDomain = 'ran' | 'ims' | 'transport' | 'core';
 
+/** Izgled jedne domeni kartice na dashboardu (ime, boja, opis). */
 export interface DomainMeta {
-  id: NetworkDomain;
-  name: string;
-  shortName: string;
-  color: string;
-  description: string;
+  id: NetworkDomain;   // jedinstveni ID domena
+  name: string;        // puno ime za drawer naslov
+  shortName: string;   // kratko ime za karticu (RAN, IMS, TRAN, CORE)
+  color: string;       // akcentna boja kartice i sparkline-a
+  description: string; // kratak opis šta domen obuhvata
 }
 
+/** Definicije sva 4 domena — boje se koriste i u CSS-u (inline --dc var). */
 export const DOMAIN_META: Record<NetworkDomain, DomainMeta> = {
   ran:       { id: 'ran',       name: 'RAN · Radio pristupna mreža', shortName: 'RAN',  color: '#0ea5e9', description: 'Bazne stanice, ćelije i pokrivenost' },
   ims:       { id: 'ims',       name: 'IMS · VoLTE glas',            shortName: 'IMS',  color: '#10b981', description: 'QCI-1 nosioci glasa i integritet veze' },
@@ -148,6 +188,11 @@ export function stationDomain(stationId: string): NetworkDomain {
   return CORE_HUB_STATIONS.has(stationId) ? 'core' : 'ran';
 }
 
+/**
+ * Svi transportni linkovi mreže, grupisani po prstenovima.
+ * from/to moraju biti postojeći ID-jevi iz NETWORK_STATIONS.
+ * Koriste ih: mapa (polylines), Transport domen kartica i drawer.
+ */
 export const NETWORK_LINKS: MapLink[] = [
   // Core Beograd backbone
   { from: 'BGD_CEN_001', to: 'BGD_CEN_002', type: 'fiber', label: '10G' },

@@ -213,7 +213,7 @@ body {
 
 .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
     gap: 10px;
     margin-bottom: 12px;
 }
@@ -1149,12 +1149,6 @@ tbody tr:hover {
     }
 }
 
-@media (max-width: 1200px) {
-    .kpi-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-}
-
 @media (max-width: 768px) {
     .kpi-grid,
     .charts-row {
@@ -1448,139 +1442,6 @@ tbody tr:hover {
     margin-top: 6px;
     font-size: 0.62rem;
     color: var(--text-muted);
-}
-
-/* ══════════════════════════════════════════════
-   KPI SCORECARD — tabla sa svim praćenim KPI-jima
-   ══════════════════════════════════════════════ */
-
-.kpi-scorecard {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 12px;
-    margin-bottom: 12px;
-}
-
-.scorecard-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 10px;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.scorecard-head h3 {
-    font-size: 0.82rem;
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-.scorecard-sub {
-    font-size: 0.65rem;
-    color: var(--text-muted);
-}
-
-.scorecard-layout {
-    display: grid;
-    grid-template-columns: 1fr 300px;
-    gap: 14px;
-}
-
-.scorecard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
-    gap: 8px;
-}
-
-.score-tile {
-    position: relative;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-left: 3px solid var(--sc, var(--accent-blue));
-    border-radius: var(--radius-sm);
-    padding: 7px 10px;
-    transition: border-color 0.15s;
-}
-
-.score-tile:hover {
-    border-color: var(--sc, var(--accent-blue));
-}
-
-.score-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 6px;
-}
-
-.k-name {
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.score-delta {
-    font-size: 0.62rem;
-    font-weight: 700;
-    flex-shrink: 0;
-}
-
-.score-delta.positive { color: var(--accent-green); }
-.score-delta.negative { color: var(--accent-red); }
-
-.score-mid {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 8px;
-    margin-top: 2px;
-}
-
-.k-val {
-    font-size: 1.05rem;
-    font-weight: 800;
-    line-height: 1.1;
-    white-space: nowrap;
-}
-
-.k-unit {
-    font-size: 0.6rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin-left: 3px;
-}
-
-.k-target {
-    margin-top: 4px;
-    font-size: 0.58rem;
-    color: var(--text-muted);
-}
-
-.worst-cells {
-    border-left: 1px solid var(--border-color);
-    padding-left: 14px;
-    min-width: 0;
-}
-
-@media (max-width: 1100px) {
-    .scorecard-layout {
-        grid-template-columns: 1fr;
-    }
-
-    .worst-cells {
-        border-left: none;
-        border-top: 1px solid var(--border-color);
-        padding-left: 0;
-        padding-top: 10px;
-    }
 }
 
 /* ══════════════════════════════════════════════

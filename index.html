@@ -75,10 +75,7 @@
         <!-- DOMENI: RAN / IMS / Transport / Core — puni ih app.ts (renderDomainCards) -->
         <section class="domain-grid" id="domainGrid" aria-label="Mrežni domeni"></section>
 
-        <!-- KPI SCORECARD: mrežni prosek svih KPI + top 5 najgorih ćelija (renderKpiScorecard) -->
-        <section class="kpi-scorecard" id="kpiScorecard" aria-label="KPI Scorecard"></section>
-
-        <!-- KPI KARTICE: 5 najvažnijih brojeva (punih ih updateSummaryCards) -->
+        <!-- KPI KARTICE: 9 metrika u jednom redu (punih ih updateSummaryCards) -->
         <section class="kpi-grid" aria-label="KPI summary">
             <article class="kpi-card">
                 <div class="kpi-icon">CELL</div>
@@ -117,6 +114,38 @@
                     <div class="kpi-label">Erlang</div>
                     <div class="kpi-value" id="totalErlang">-</div>
                     <div class="kpi-delta" id="deltaErlang"></div>
+                </div>
+            </article>
+            <article class="kpi-card">
+                <div class="kpi-icon">CSSR</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Call Setup SR</div>
+                    <div class="kpi-value" id="cssrRate">-</div>
+                    <div class="kpi-delta" id="deltaCssr"></div>
+                </div>
+            </article>
+            <article class="kpi-card">
+                <div class="kpi-icon">RET</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Retainability</div>
+                    <div class="kpi-value" id="retainRate">-</div>
+                    <div class="kpi-delta" id="deltaRetain"></div>
+                </div>
+            </article>
+            <article class="kpi-card">
+                <div class="kpi-icon">MOB</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Mobility SR</div>
+                    <div class="kpi-value" id="avgMobilitySR">-</div>
+                    <div class="kpi-delta" id="deltaMobility"></div>
+                </div>
+            </article>
+            <article class="kpi-card">
+                <div class="kpi-icon">PDCCH</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">PDCCH Error</div>
+                    <div class="kpi-value" id="avgPdcchError">-</div>
+                    <div class="kpi-delta" id="deltaPdcch"></div>
                 </div>
             </article>
         </section>

@@ -670,10 +670,11 @@ function updateDashboard(): void {
 
   updateSummaryCards(curr);   // 1. gornjih 5 kartica + delte
   renderDomainCards();        // 2. RAN/IMS/Transport/Core kartice + sparkline
-  updateTable();              // 3. tabela (poštuje domen filter)
-  updateCharts();             // 4. 4 Chart.js grafikona
-  networkMapModule?.updateNetworkMap?.(kpiData); // 5. boje na mapi (ako je mapa učitana)
-  updateNocPanel(curr);       // 6. health ring, SLA, alarmi, incidenti
+  renderKpiScorecard();       // 3. KPI scorecard (9 metrika + top 5 najgorih)
+  updateTable();              // 4. tabela (poštuje domen filter)
+  updateCharts();             // 5. 4 Chart.js grafikona
+  networkMapModule?.updateNetworkMap?.(kpiData); // 6. boje na mapi (ako je mapa učitana)
+  updateNocPanel(curr);       // 7. health ring, SLA, alarmi, incidenti
 }
 
 // ============================================================================
@@ -981,6 +982,12 @@ function sparklineSvg(points: number[], color: string): string {
  * Klik na karticu → toggleDomainFilter (filter tablice + drawer domena).
  * Ako domen ima alarme dobija klasu has-critical → CSS "munja" flicker.
  */
+/**
+ * Iscrtaj 4 domeni kartice iznova (zove updateDashboard).
+ * Svaka kartica: kratko ime + dostupnost% + opis + sparkline + broj alarma.
+ * Klik na karticu → toggleDomainFilter (filter tablice + drawer domena).
+ * Ako domen ima alarme dobija klasu has-critical → CSS "munja" flicker.
+ */
 function renderDomainCards(): void {
   const grid = document.getElementById('domainGrid');
   if (!grid) return;
@@ -1037,6 +1044,114 @@ function toggleDomainFilter(d: NetworkDomain): void {
   renderDomainCards();
   updateTable();
   if (activeDomainFilter) openDomainDrawer(activeDomainFilter);
+}
+
+// ============================================================================
+// KPI SCORECARD — profesionalna tabla sa SVIM praćenim KPI-jima
+//
+// 9 metrika po mrežnom proseku: 6 direktnih + 2 izvedena (Call Setup SR,
+// Retainability) + Erlang. Svaka kartica: vrednost, SLA cilj, delta ↑↓
+// u odnosu na prethodni snapshot i sparkline timeline.
+// Desna kolona: Top 5 najgorih ćelija (klik → drawer ćelije).
+// ============================================================================
+
+/** Definicija jednog KPI-ja koji scorecard prati. */
+interface KpiDef {
+  id: string;              // ključ za historiju/deltu
+  name: string;            // ime za prikaz
+  unit: string;            // jedinica (%, Erl)
+  target: number;          // SLA cilj
+  higherIsBetter: boolean; // da li je veća vrednost bolja
+  compute: (cells: KpiCell[]) => number; // kako se računa mrežni prosek
+}
+
+/** Prosek niza (NaN ako je prazan). */
+const avgOf = (xs: number[]): number =>
+  xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN;
+
+/** Definicije svih 9 praćenih KPI-jeva. Izvedeni: CSSR = 100−AF, Retainability = 100−Drop. */
+const KPI_DEFS: KpiDef[] = [
+  { id: 'af',       name: 'Access Fail Rate', unit: '%',   target: SLA.accessFailRate,  higherIsBetter: false, compute: cs => avgOf(cs.map(c => c.volteAccessFailureRate)) },
+  { id: 'drop',     name: 'Drop Rate',        unit: '%',   target: SLA.dropRate,        higherIsBetter: false, compute: cs => avgOf(cs.map(c => c.volteDropRate)) },
+  { id: 'integ',    name: 'Cell Integrity',   unit: '%',   target: SLA.cellIntegrity,   higherIsBetter: true,  compute: cs => avgOf(cs.map(c => c.volteCellIntegrity)) },
+  { id: 'cssr',     name: 'Call Setup SR',    unit: '%',   target: 98,                  higherIsBetter: true,  compute: cs => 100 - avgOf(cs.map(c => c.volteAccessFailureRate)) },
+  { id: 'retain',   name: 'Retainability',    unit: '%',   target: 98.5,                higherIsBetter: true,  compute: cs => 100 - avgOf(cs.map(c => c.volteDropRate)) },
+  { id: 'mobility', name: 'Mobility SR',      unit: '%',   target: 97,                  higherIsBetter: true,  compute: cs => avgOf(cs.map(c => c.volteMobilitySR)) },
+  { id: 'pdcch',    name: 'PDCCH Error',      unit: '%',   target: SLA.pdcchError,      higherIsBetter: false, compute: cs => avgOf(cs.map(c => c.pdcchErrorRateVolte)) },
+  { id: 'erlang',   name: 'Erlang / Sektor',  unit: 'Erl', target: SLA.erlangPerSector, higherIsBetter: false, compute: cs => avgOf(cs.map(c => c.volteErlang)) },
+];
+
+/** Rolling timeline po KPI-ju (max 24 vrednosti) — hrani sparkline u tile-u. */
+const kpiHistory: Record<string, number[]> = {};
+/** Vrednosti iz prethodnog snapshot-a — za delte ↑↓ u scorecard-u. */
+const prevScorecard: Record<string, number> = {};
+
+/**
+ * Iscrtaj KPI Scorecard (zove updateDashboard posle svakog snapshot-a).
+ * Levo: grid od 9 KPI tile-ova. Desno: Top 5 najgorih ćelija po drop rate-u
+ * (klikabilne → openCellDrawer preko data-cell delegata).
+ */
+function renderKpiScorecard(): void {
+  const section = document.getElementById('kpiScorecard');
+  if (!section) return;
+  const cells = kpiData.map(normalizeCell);
+
+  const tiles = KPI_DEFS.map(def => {
+    const value = def.compute(cells);
+
+    // historija za sparkline (samo validne vrednosti)
+    kpiHistory[def.id] = kpiHistory[def.id] ?? [];
+    if (Number.isFinite(value)) {
+      kpiHistory[def.id].push(Number(value.toFixed(2)));
+      if (kpiHistory[def.id].length > 24) kpiHistory[def.id].shift();
+    }
+
+    // boja po SLA: dobar prag = target, loš prag = 2× target (ili target−2 kod "više je bolje")
+    const cls = getKpiClass(value, def.target, def.higherIsBetter ? def.target - 2 : def.target * 2, def.higherIsBetter) ?? '';
+    const hex = statusHex(cls.replace('kpi-', '').toUpperCase());
+
+    // delta u odnosu na prethodni snapshot
+    const prev = prevScorecard[def.id];
+    const diff = prev === undefined || !Number.isFinite(value) ? null : value - prev;
+    const deltaHtml = diff === null || Math.abs(diff) < 0.005
+      ? ''
+      : `<span class="score-delta ${(def.higherIsBetter ? diff > 0 : diff < 0) ? 'positive' : 'negative'}">${diff > 0 ? '+' : ''}${diff.toFixed(2)}</span>`;
+    prevScorecard[def.id] = value;
+
+    const hist = kpiHistory[def.id];
+    const spark = sparklineSvg(hist.length > 1 ? hist : [Number.isFinite(value) ? value : 100, Number.isFinite(value) ? value : 100], hex);
+
+    return `<div class="score-tile" style="--sc:${hex}">
+      <div class="score-top"><span class="k-name">${def.name}</span>${deltaHtml}</div>
+      <div class="score-mid">
+        <span class="k-val ${cls}">${Number.isFinite(value) ? value.toFixed(2) : '—'}<span class="k-unit">${def.unit}</span></span>
+        ${spark}
+      </div>
+      <div class="k-target">SLA: ${def.higherIsBetter ? '&ge;' : '&le;'} ${def.target}${def.unit === '%' ? '%' : ''}</div>
+    </div>`;
+  }).join('');
+
+  // Top 5 najgorih ćelija po drop rate-u (klik → drawer)
+  const worst = [...cells].sort((a, b) => b.volteDropRate - a.volteDropRate).slice(0, 5);
+  const worstRows = worst.map(c => listRow(
+    `data-cell="${esc(c.celija)}"`, '',
+    esc(c.celija), esc(c.stanica),
+    `${c.volteDropRate.toFixed(2)}%`,
+    getCellStatus(c)
+  )).join('');
+
+  section.innerHTML = `
+    <div class="scorecard-head">
+      <h3>KPI Scorecard — mrežni prosek</h3>
+      <span class="scorecard-sub">${cells.length} ćelija &middot; SLA pragovi iz konfiguracije</span>
+    </div>
+    <div class="scorecard-layout">
+      <div class="scorecard-grid">${tiles}</div>
+      <div class="worst-cells">
+        <div class="drawer-section-title">Top 5 najgorih ćelija (drop rate)</div>
+        ${worstRows || '<div class="alarm-empty">Nema podataka</div>'}
+      </div>
+    </div>`;
 }
 
 // ============================================================================
@@ -1139,12 +1254,24 @@ function openCellDrawer(cell: KpiCell): void {
     <div class="drawer-section">
       <div class="drawer-section-title">Svi pokazatelji</div>
       <div class="metric-grid">
+        ${metricTile('Call Setup SR', `${(100 - cell.volteAccessFailureRate).toFixed(2)}%`, getKpiClass(100 - cell.volteAccessFailureRate, 98, 96, true) ?? '')}
+        ${metricTile('Retainability', `${(100 - cell.volteDropRate).toFixed(2)}%`, getKpiClass(100 - cell.volteDropRate, 98.5, 96.5, true) ?? '')}
         ${metricTile('Erlang', cell.volteErlang.toFixed(1), cell.volteErlang > SLA.erlangPerSector ? 'kpi-warning' : '')}
         ${metricTile('Succ Calls', String(cell.volteSuccCalls))}
         ${metricTile('Mobility SR', `${cell.volteMobilitySR.toFixed(2)}%`, getKpiClass(cell.volteMobilitySR, 97, 95, true) ?? '')}
         ${metricTile('PDCCH Error', `${cell.pdcchErrorRateVolte.toFixed(2)}%`, getKpiClass(cell.pdcchErrorRateVolte, SLA.pdcchError, SLA.pdcchError * 2) ?? '')}
         ${metricTile('Drops Count', String(cell.volteDropsCount), cell.volteDropsCount > 20 ? 'kpi-bad' : '')}
         ${metricTile('Domen', DOMAIN_META[stationDomain(cell.stanica)].shortName)}
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <div class="drawer-section-title">QCI nosioci (IMS)</div>
+      <div class="metric-grid">
+        ${cell.volteQci1InitSuccRate != null ? metricTile('QCI-1 Init SR', `${cell.volteQci1InitSuccRate.toFixed(2)}%`, getKpiClass(cell.volteQci1InitSuccRate, 98, 95, true) ?? '') : metricTile('QCI-1 Init SR', '—')}
+        ${cell.volteQci1AddSuccRate != null ? metricTile('QCI-1 Add SR', `${cell.volteQci1AddSuccRate.toFixed(2)}%`, getKpiClass(cell.volteQci1AddSuccRate, 98, 95, true) ?? '') : metricTile('QCI-1 Add SR', '—')}
+        ${cell.volteQci5InitSuccRate != null ? metricTile('QCI-5 Init SR', `${cell.volteQci5InitSuccRate.toFixed(2)}%`, getKpiClass(cell.volteQci5InitSuccRate, 98, 95, true) ?? '') : metricTile('QCI-5 Init SR', '—')}
+        ${cell.volteQci5AddSuccRate != null ? metricTile('QCI-5 Add SR', `${cell.volteQci5AddSuccRate.toFixed(2)}%`, getKpiClass(cell.volteQci5AddSuccRate, 98, 95, true) ?? '') : metricTile('QCI-5 Add SR', '—')}
       </div>
     </div>
 
@@ -1676,6 +1803,14 @@ function setupEventListeners(): void {
     const row = (e.target as HTMLElement).closest<HTMLTableRowElement>('tr[data-celija]');
     if (!row?.dataset.celija) return;
     const cell = kpiData.find(c => c.celija === row.dataset.celija);
+    if (cell) openCellDrawer(normalizeCell(cell));
+  });
+
+  // Klik na ćeliju u KPI Scorecard "Top 5 najgorih" → drawer te ćelije
+  document.getElementById('kpiScorecard')?.addEventListener('click', (e) => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-cell]');
+    if (!el?.dataset.cell) return;
+    const cell = kpiData.find(c => c.celija === el.dataset.cell);
     if (cell) openCellDrawer(normalizeCell(cell));
   });
 

@@ -55,8 +55,12 @@
         </div>
         <h1 class="top-bar-title">NOC Dashboard</h1>
         <div class="top-bar-actions">
+            <div class="top-search">
+                <input id="topSearch" type="search" placeholder="Search alerts, cells, IPs..." aria-label="Search" />
+            </div>
             <span id="liveBadge" class="live-badge muted" title="Podaci se ažuriraju automatski">LIVE</span>
             <button id="themeToggle" class="btn-theme" type="button" title="Promeni temu (svetla/tamna)">☾</button>
+            <div class="top-avatar" title="Admin">A</div>
         </div>
     </header>
 
@@ -75,78 +79,105 @@
         <!-- DOMENI: RAN / IMS / Transport / Core — puni ih app.ts (renderDomainCards) -->
         <section class="domain-grid" id="domainGrid" aria-label="Mrežni domeni"></section>
 
-        <!-- KPI KARTICE: 9 metrika u jednom redu (punih ih updateSummaryCards) -->
+        <!-- KPI KARTICE: 9 metrika — NEXUS stil sa sparkline i neon ikonicama -->
         <section class="kpi-grid" aria-label="KPI summary">
-            <article class="kpi-card">
-                <div class="kpi-icon">CELL</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Total Cells</div>
-                    <div class="kpi-value" id="totalCells">-</div>
+            <article class="kpi-card" data-kpi="cells" style="--kpi-accent: #10b981">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">◉</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Total Cells</div>
+                        <div class="kpi-value" id="totalCells">-</div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkCells"></div>
             </article>
-            <article class="kpi-card">
-                <div class="kpi-icon">DROP</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Drop Rate</div>
-                    <div class="kpi-value" id="avgDropRate">-</div>
-                    <div class="kpi-delta" id="deltaDropRate"></div>
+            <article class="kpi-card" data-kpi="drop" style="--kpi-accent: #ef4444">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">▼</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Drop Rate</div>
+                        <div class="kpi-value" id="avgDropRate">-</div>
+                        <div class="kpi-delta" id="deltaDropRate"></div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkDrop"></div>
             </article>
-            <article class="kpi-card">
-                <div class="kpi-icon">FAIL</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Access Fail</div>
-                    <div class="kpi-value" id="avgAccessFailRate">-</div>
-                    <div class="kpi-delta" id="deltaAccessFailRate"></div>
+            <article class="kpi-card" data-kpi="fail" style="--kpi-accent: #f59e0b">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">⚠</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Access Fail</div>
+                        <div class="kpi-value" id="avgAccessFailRate">-</div>
+                        <div class="kpi-delta" id="deltaAccessFailRate"></div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkFail"></div>
             </article>
-            <article class="kpi-card">
-                <div class="kpi-icon">INT</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Cell Integrity</div>
-                    <div class="kpi-value" id="avgCellIntegrity">-</div>
-                    <div class="kpi-delta" id="deltaCellIntegrity"></div>
+            <article class="kpi-card" data-kpi="integrity" style="--kpi-accent: #06b6d4">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">◆</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Cell Integrity</div>
+                        <div class="kpi-value" id="avgCellIntegrity">-</div>
+                        <div class="kpi-delta" id="deltaCellIntegrity"></div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkIntegrity"></div>
             </article>
-            <article class="kpi-card">
-                <div class="kpi-icon">ERL</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Erlang</div>
-                    <div class="kpi-value" id="totalErlang">-</div>
-                    <div class="kpi-delta" id="deltaErlang"></div>
+            <article class="kpi-card" data-kpi="erlang" style="--kpi-accent: #a855f7">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">⬡</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Erlang</div>
+                        <div class="kpi-value" id="totalErlang">-</div>
+                        <div class="kpi-delta" id="deltaErlang"></div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkErlang"></div>
             </article>
-            <article class="kpi-card">
-                <div class="kpi-icon">CSSR</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Call Setup SR</div>
-                    <div class="kpi-value" id="cssrRate">-</div>
-                    <div class="kpi-delta" id="deltaCssr"></div>
+            <article class="kpi-card" data-kpi="cssr" style="--kpi-accent: #10b981">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">✓</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Call Setup SR</div>
+                        <div class="kpi-value" id="cssrRate">-</div>
+                        <div class="kpi-delta" id="deltaCssr"></div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkCssr"></div>
             </article>
-            <article class="kpi-card">
-                <div class="kpi-icon">RET</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Retainability</div>
-                    <div class="kpi-value" id="retainRate">-</div>
-                    <div class="kpi-delta" id="deltaRetain"></div>
+            <article class="kpi-card" data-kpi="retain" style="--kpi-accent: #0ea5e9">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">⬢</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Retainability</div>
+                        <div class="kpi-value" id="retainRate">-</div>
+                        <div class="kpi-delta" id="deltaRetain"></div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkRetain"></div>
             </article>
-            <article class="kpi-card">
-                <div class="kpi-icon">MOB</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Mobility SR</div>
-                    <div class="kpi-value" id="avgMobilitySR">-</div>
-                    <div class="kpi-delta" id="deltaMobility"></div>
+            <article class="kpi-card" data-kpi="mobility" style="--kpi-accent: #06b6d4">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">⇄</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Mobility SR</div>
+                        <div class="kpi-value" id="avgMobilitySR">-</div>
+                        <div class="kpi-delta" id="deltaMobility"></div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkMobility"></div>
             </article>
-            <article class="kpi-card">
-                <div class="kpi-icon">PDCCH</div>
-                <div class="kpi-content">
-                    <div class="kpi-label">PDCCH Error</div>
-                    <div class="kpi-value" id="avgPdcchError">-</div>
-                    <div class="kpi-delta" id="deltaPdcch"></div>
+            <article class="kpi-card" data-kpi="pdcch" style="--kpi-accent: #f59e0b">
+                <div class="kpi-card-top">
+                    <div class="kpi-icon">≋</div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">PDCCH Error</div>
+                        <div class="kpi-value" id="avgPdcchError">-</div>
+                        <div class="kpi-delta" id="deltaPdcch"></div>
+                    </div>
                 </div>
+                <div class="kpi-sparkline" id="sparkPdcch"></div>
             </article>
         </section>
 

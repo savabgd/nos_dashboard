@@ -1362,6 +1362,41 @@ function handleNavAction(action: string): void {
   document.getElementById('appShell')?.classList.remove('sidebar-open');
 }
 
+/** Sparkline historija za 9 KPI kartica (NEXUS stil — mini linija na dnu karte) */
+const kpiHistory: Record<string, number[]> = {
+  cells: [], drop: [], fail: [], integrity: [], erlang: [], cssr: [], retain: [], mobility: [], pdcch: []
+};
+
+function pushKpiHistory(key: string, value: number): void {
+  const arr = kpiHistory[key];
+  if (!arr || !Number.isFinite(value)) return;
+  arr.push(Number(value.toFixed(2)));
+  if (arr.length > 20) arr.shift();
+}
+
+function renderKpiSparkline(containerId: string, history: number[], color: string): void {
+  const el = document.getElementById(containerId);
+  if (!el || history.length < 2) {
+    if (el) el.innerHTML = '';
+    return;
+  }
+  const min = Math.min(...history);
+  const max = Math.max(...history);
+  const range = max - min || 1;
+  const w = 100;
+  const h = 28;
+  const points = history.map((v, i) => {
+    const x = (i / (history.length - 1)) * w;
+    const y = h - 4 - ((v - min) / range) * (h - 8);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  // Color by trend: green if improving, red if degrading (for lower-is-better metrics)
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="100%" height="28">
+    <polyline fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" points="${points}" opacity="0.9"/>
+    <polyline fill="none" stroke="${color}" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" points="${points}" opacity="0.08"/>
+  </svg>`;
+}
+
 /** Gornjih 9 KPI kartica u jednom redu: vrednosti + delte ↑↓ vs prethodni snapshot.
  *  Izvedene metrike: Call Setup SR = 100−AF, Retainability = 100−Drop. */
 function updateSummaryCards(curr: KpiMetrics | null): void {
@@ -1382,11 +1417,35 @@ function updateSummaryCards(curr: KpiMetrics | null): void {
   updateDelta('deltaCellIntegrity', curr.cellIntegrity, prevMetrics?.cellIntegrity, false);
   updateDelta('deltaErlang', curr.erlang, prevMetrics?.erlang, false);
   if (prevMetrics) {
-    updateDelta('deltaCssr', 100 - curr.accessFailRate, 100 - prevMetrics.accessFailRate, true);
-    updateDelta('deltaRetain', 100 - curr.dropRate, 100 - prevMetrics.dropRate, true);
+    updateDelta('deltaCssr', 100 - curr.accessFailRate, 100 - prevMetrics.accessFailRate, false);
+    updateDelta('deltaRetain', 100 - curr.dropRate, 100 - prevMetrics.dropRate, false);
+  } else {
+    updateDelta('deltaCssr', 100 - curr.accessFailRate, undefined, false);
+    updateDelta('deltaRetain', 100 - curr.dropRate, undefined, false);
   }
   updateDelta('deltaMobility', curr.mobilitySR, prevMetrics?.mobilitySR, false);
   updateDelta('deltaPdcch', curr.pdcchError, prevMetrics?.pdcchError, true);
+
+  // NEXUS sparklines — push history and render
+  pushKpiHistory('cells', kpiData.length);
+  pushKpiHistory('drop', curr.dropRate);
+  pushKpiHistory('fail', curr.accessFailRate);
+  pushKpiHistory('integrity', curr.cellIntegrity);
+  pushKpiHistory('erlang', curr.erlang);
+  pushKpiHistory('cssr', 100 - curr.accessFailRate);
+  pushKpiHistory('retain', 100 - curr.dropRate);
+  pushKpiHistory('mobility', curr.mobilitySR);
+  pushKpiHistory('pdcch', curr.pdcchError);
+
+  renderKpiSparkline('sparkCells', kpiHistory.cells, '#10b981');
+  renderKpiSparkline('sparkDrop', kpiHistory.drop, '#ef4444');
+  renderKpiSparkline('sparkFail', kpiHistory.fail, '#f59e0b');
+  renderKpiSparkline('sparkIntegrity', kpiHistory.integrity, '#06b6d4');
+  renderKpiSparkline('sparkErlang', kpiHistory.erlang, '#a855f7');
+  renderKpiSparkline('sparkCssr', kpiHistory.cssr, '#10b981');
+  renderKpiSparkline('sparkRetain', kpiHistory.retain, '#0ea5e9');
+  renderKpiSparkline('sparkMobility', kpiHistory.mobility, '#06b6d4');
+  renderKpiSparkline('sparkPdcch', kpiHistory.pdcch, '#f59e0b');
 }
 
 /** Primeni payload sa SSE stream-a (isti oblik kao API odgovor) → updateDashboard. */
@@ -1647,7 +1706,27 @@ function setupEventListeners(): void {
       if (searchTimer) clearTimeout(searchTimer);
       searchTimer = window.setTimeout(() => {
         tableSearch = tableSearchInput.value;
+        // Sync top bar search if present
+        const top = document.getElementById('topSearch') as HTMLInputElement | null;
+        if (top && top.value !== tableSearch) top.value = tableSearch;
         updateTable();
+      }, 200);
+    });
+  }
+
+  // Top bar global search (NEXUS style) → mirrors table search
+  const topSearchInput = document.getElementById('topSearch') as HTMLInputElement | null;
+  if (topSearchInput) {
+    topSearchInput.addEventListener('input', () => {
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => {
+        tableSearch = topSearchInput.value;
+        if (tableSearchInput) tableSearchInput.value = tableSearch;
+        updateTable();
+        // Also filter domain cards highlight?
+        if (tableSearch) {
+          document.getElementById('tableBody')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
       }, 200);
     });
   }

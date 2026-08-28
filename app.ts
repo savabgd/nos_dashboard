@@ -670,6 +670,7 @@ async function loadData(): Promise<void> {
  */
 function updateDashboard(): void {
   kpiData = kpiData.map(normalizeCell); // garantuj tipove pre bilo kog korišćenja
+  pushCellTrends();                     // snimi istoriju po ćeliji (za trend u drawer-u)
   const curr = computeMetrics(kpiData);
 
   updateSummaryCards(curr);   // 1. 9 KPI kartica + delte
@@ -1176,9 +1177,28 @@ function openCellDrawer(cell: KpiCell): void {
         ${metricTile('Stanica', esc(cell.stanica))}
         ${metricTile('Klaster', esc(cell.klaster))}
       </div>
-    </div>`;
+    </div>
+
+    ${cellTrendSection(cell.celija)}`;
 
   openDrawer(cell.celija, `${esc(cell.klaster)} &middot; ${esc(cell.stanica)} &middot; ${esc(cell.band)} MHz`);
+}
+
+/** "Trend" sekcija u drawer ćelije — mini grafovi iz per-ćelijske istorije. */
+function cellTrendSection(celija: string): string {
+  const trend = cellTrendHistory[celija];
+  if (!trend || trend.drop.length < 2) return '';
+
+  const n = trend.drop.length;
+  return `
+    <div class="drawer-section">
+      <div class="drawer-section-title">Trend (poslednjih ${n} snapshot-a)</div>
+      <div class="trend-row">
+        <div class="trend-box"><span class="trend-label">Drop Rate</span>${sparklineSvg(trend.drop, '#ef4444')}</div>
+        <div class="trend-box"><span class="trend-label">Integrity</span>${sparklineSvg(trend.integrity, '#06b6d4')}</div>
+        <div class="trend-box"><span class="trend-label">Access Fail</span>${sparklineSvg(trend.af, '#f59e0b')}</div>
+      </div>
+    </div>`;
 }
 
 /** Najgori status u grupi ćelija (stanice/okruga/domene) — lanac najslabije karike. */
@@ -1372,6 +1392,30 @@ function pushKpiHistory(key: string, value: number): void {
   if (!arr || !Number.isFinite(value)) return;
   arr.push(Number(value.toFixed(2)));
   if (arr.length > 20) arr.shift();
+}
+
+// ── Per-ćelijska trend istorija (za "Trend" sekciju u drawer ćelije) ──
+interface CellTrend {
+  drop: number[];      // istorija drop rate-a
+  integrity: number[]; // istorija integriteta
+  af: number[];        // istorija access fail-a
+}
+const cellTrendHistory: Record<string, CellTrend> = {};
+
+/** Pri svakom snapshot-u upiši trenutne vrednosti u istoriju svake ćelije (max 20). */
+function pushCellTrends(): void {
+  for (const cell of kpiData) {
+    const trend = cellTrendHistory[cell.celija] ?? { drop: [], integrity: [], af: [] };
+    trend.drop.push(cell.volteDropRate);
+    trend.integrity.push(cell.volteCellIntegrity);
+    trend.af.push(cell.volteAccessFailureRate);
+    if (trend.drop.length > 20) {
+      trend.drop.shift();
+      trend.integrity.shift();
+      trend.af.shift();
+    }
+    cellTrendHistory[cell.celija] = trend;
+  }
 }
 
 function renderKpiSparkline(containerId: string, history: number[], color: string): void {

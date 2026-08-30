@@ -7,6 +7,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: __dirname,
   publicDir: 'public',
+  // Za Apache podfolder deploy:  VITE_BASE_PATH=/nos-dashboard/ npm run build
+  // Za root deploy (http://server/): ostavi / (default)
+  base: process.env.VITE_BASE_PATH || '/',
   
   resolve: {
     alias: {

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:apache": "tsc && vite build",
+    "build:apache:subfolder": "tsc && cross-env VITE_BASE_PATH=/nos-dashboard/ vite build",
     "preview": "vite preview",
+    "deploy:apache": "powershell -ExecutionPolicy Bypass -File scripts/deploy-apache.ps1",
     "commit:auto": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1",
     "commit:auto:push": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1 -Push",
     "commit:auto:watch": "powershell -ExecutionPolicy Bypass -File scripts/auto-commit.ps1 -Watch",

@@ -20,7 +20,8 @@ $replacements = @(
   @("#LoadModule proxy_http_module", "LoadModule proxy_http_module"),
   @("#LoadModule headers_module", "LoadModule headers_module"),
   @("#LoadModule expires_module", "LoadModule expires_module"),
-  @("#LoadModule deflate_module", "LoadModule deflate_module")
+  @("#LoadModule deflate_module", "LoadModule deflate_module"),
+  @("#LoadModule filter_module", "LoadModule filter_module")
 )
 
 foreach ($pair in $replacements) {

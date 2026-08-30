@@ -4,7 +4,7 @@
   Build + deploy NOC Dashboard na Apache (Windows).
 
 .DESCRIPTION
-  1. Pokreće `npm run build` (Vite -> dist/)
+  1. Pokrece `npm run build` (Vite -> dist/)
   2. Kopira dist/ u Apache DocumentRoot (htdocs)
   3. Opciono restartuje Apache servis
 
@@ -37,7 +37,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..").Path
 Set-Location $ProjectRoot
 
-# ——— 1. Detektuj htdocs ako nije zadat ———
+# --- 1. Detektuj htdocs ako nije zadat ---
 if (-not $Htdocs) {
   $candidates = @(
     "C:\xampp\htdocs\nos-dashboard",
@@ -53,41 +53,41 @@ if (-not $Htdocs) {
 }
 Write-Host "Deploy target: $Htdocs" -ForegroundColor Cyan
 
-# ——— 2. Build ———
+# --- 2. Build ---
 if ($Subfolder) {
   Write-Host "Build (subfolder /nos-dashboard/)..." -ForegroundColor Yellow
   $env:VITE_BASE_PATH = "/nos-dashboard/"
-  # cross-env nije obavezan na Windows — postavi env direktno
-  npm run build
+  # cross-env nije obavezan na Windows - postavi env direktno
+  & npm.cmd run build
 } else {
   Write-Host "Build (root /)..." -ForegroundColor Yellow
   Remove-Item Env:VITE_BASE_PATH -ErrorAction SilentlyContinue
-  npm run build
+  & npm.cmd run build
 }
 if ($LASTEXITCODE -ne 0) { throw "Build failed (exit $LASTEXITCODE)" }
 
 if (-not (Test-Path "$ProjectRoot\dist\index.html")) {
-  throw "dist/index.html ne postoji — build nije uspeo?"
+  throw "dist/index.html ne postoji - build nije uspeo?"
 }
 if (-not (Test-Path "$ProjectRoot\dist\.htaccess")) {
-  Write-Warning ".htaccess nije u dist/ — proveri da postoji public/.htaccess"
+  Write-Warning ".htaccess nije u dist/ - proveri da postoji public/.htaccess"
 }
 
-# ——— 3. Kopiraj ———
+# --- 3. Kopiraj ---
 Write-Host "Kopiram dist/ -> $Htdocs ..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path $Htdocs | Out-Null
-# Očisti staro (osim .htaccess ako ga ručno menjaš na serveru — ovde brišemo sve)
+# Ocisti staro (osim .htaccess ako ga rucno menjas na serveru - ovde brisemo sve)
 Get-ChildItem -Path $Htdocs -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item -Path "$ProjectRoot\dist\*" -Destination $Htdocs -Recurse -Force
 Write-Host "Kopirano:" -ForegroundColor Green
 Get-ChildItem $Htdocs | Format-Table Name, Length -AutoSize | Out-String | Write-Host
 
-# ——— 4. Uputstvo za vhost ———
+# --- 4. Uputstvo za vhost ---
 Write-Host ""
-Write-Host "SLEDEĆI KORAK (jednokratno):" -ForegroundColor Magenta
-Write-Host "  1. Kopiraj apache/nos-dashboard.conf u Apache conf/extra/ i uključi ga u httpd.conf:"
+Write-Host "SLEDECI KORAK (jednokratno):" -ForegroundColor Magenta
+Write-Host "  1. Kopiraj apache/nos-dashboard.conf u Apache conf/extra/ i ukljuci ga u httpd.conf:"
 Write-Host "       Include conf/extra/nos-dashboard.conf" -ForegroundColor Gray
-Write-Host "  2. U httpd.conf uključi module (ukloni # ispred):" -ForegroundColor Gray
+Write-Host "  2. U httpd.conf ukljuci module (ukloni # ispred):" -ForegroundColor Gray
 Write-Host "       LoadModule rewrite_module modules/mod_rewrite.so" -ForegroundColor DarkGray
 Write-Host "       LoadModule proxy_module modules/mod_proxy.so" -ForegroundColor DarkGray
 Write-Host "       LoadModule proxy_http_module modules/mod_proxy_http.so" -ForegroundColor DarkGray
@@ -96,7 +96,7 @@ Write-Host "       LoadModule expires_module modules/mod_expires.so" -Foreground
 Write-Host "       LoadModule deflate_module modules/mod_deflate.so" -ForegroundColor DarkGray
 Write-Host "  3. Restart Apache. Vidi APACHE.md za detalje." -ForegroundColor Gray
 
-# ——— 5. Restart (opciono) ———
+# --- 5. Restart (opciono) ---
 if ($Restart) {
   Write-Host ""
   Write-Host "Restart Apache..." -ForegroundColor Yellow
@@ -105,7 +105,7 @@ if ($Restart) {
     Restart-Service $svc.Name -Force
     Write-Host "Servis $($svc.Name) restartovan." -ForegroundColor Green
   } else {
-    Write-Host "Nisam našao Apache servis — restartuj ručno:" -ForegroundColor Yellow
+    Write-Host "Nisam nasao Apache servis - restartuj rucno:" -ForegroundColor Yellow
     Write-Host "  XAMPP: XAMPP Control Panel -> Apache -> Stop/Start" -ForegroundColor Gray
     Write-Host "  Apache24: httpd -k restart" -ForegroundColor Gray
   }
